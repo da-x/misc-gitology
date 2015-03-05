@@ -1,0 +1,18 @@
+#!/bin/bash -ue
+
+subj=`git show HEAD --format="%s" -s`
+if [ "${subj}" == "TEMP-COMMIT: untracked" ] ; then
+    git reset --soft HEAD^
+    git reset HEAD .
+fi
+
+subj=`git show HEAD --format="%s" -s`
+if [ "${subj}" == "TEMP-COMMIT: uncommitted" ] ; then
+    git reset --soft HEAD^
+    git reset HEAD .
+fi
+
+subj=`git show HEAD --format="%s" -s`
+if [ "${subj}" == "TEMP-COMMIT: staged" ] ; then
+    git reset --soft HEAD^
+fi

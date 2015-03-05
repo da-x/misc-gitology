@@ -1,0 +1,28 @@
+#!/bin/bash -ue
+
+if [ "$#" -ne 1 ] ; then
+    echo "Expected host:path"
+    exit -1
+fi
+
+X="$1"
+arr=(`echo $X | tr ':' ' '`)
+
+dest=${arr[0]}
+remote_path=${arr[1]}
+
+if [ -z "$dest" ] ; then
+    echo "Destination not specified"
+    exit -1
+fi
+
+if [ -z "$remote_path" ] ; then
+    echo "Path on destination not specified"
+    exit -1
+fi
+
+branch=master
+version=`git-temp-make`
+
+git push -f ${dest}:${remote_path} ${version}:${branch}
+ssh -t ${dest} "cd ${remote_path} && git reset --hard ${branch}"
