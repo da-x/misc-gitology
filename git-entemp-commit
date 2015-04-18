@@ -1,26 +1,60 @@
 #!/bin/bash -ue
 
+# Utility functions
 cur_tree() {
     git show --format="%T" -s
 }
 
-# Prepare commit
-orig_pwd=`pwd`
+# Turn unmerged paths into a commit. Unless we do this
+# git likes to complain about the state of the index. It's
+# normallization 'normallization' of the index.
+
+git-index-unmerged-to-regular-codec.py encode
+
+# Turn staged files into a commit
 tree=`cur_tree`
 git commit -m "TEMP-COMMIT: staged" --allow-empty
 if [ "${tree}" == "`cur_tree`" ] ; then
+    # Remove empty commit
     git reset --soft HEAD^
 fi
 
+# Turn modified but unadded files into a commit
 tree=`cur_tree`
 git commit -a -m "TEMP-COMMIT: uncommitted" --allow-empty
 if [ "${tree}" == "`cur_tree`" ] ; then
+    # Remove empty commit
     git reset --soft HEAD^
 fi
 
+# Turn untracked but not ignored files a commit
 tree=`cur_tree`
 git add -A .
 git commit -m "TEMP-COMMIT: untracked" --allow-empty
 if [ "${tree}" == "`cur_tree`" ] ; then
+    # Remove empty commit
     git reset --soft HEAD^
+fi
+
+# Turn various special states into a commit
+if [[ -f .git/rebase-merge/head-name ]] ; then
+    branch=`cat .git/rebase-merge/head-name`
+    branch=${branch#refs/heads/}
+    echo Detected rebase
+    mv .git/rebase-merge .GIT-TEMP-COMMIT-STATE
+    git add -f .GIT-TEMP-COMMIT-STATE
+    git commit -m "$(echo -e 'TEMP-COMMIT: rebase-merge\n\nBranch:' ${branch})" --allow-empty
+    rev=$(git rev-parse HEAD)
+    git checkout ${branch} 2>/dev/null >/dev/null
+    git reset --hard ${rev}
+elif [[ -f .git/rebase-apply/head-name ]] ; then
+    branch=`cat .git/rebase-apply/head-name`
+    branch=${branch#refs/heads/}
+    echo Detected rebase
+    mv .git/rebase-apply .GIT-TEMP-COMMIT-STATE
+    git add -f .GIT-TEMP-COMMIT-STATE
+    git commit -m "$(echo -e 'TEMP-COMMIT: rebase-apply\n\nBranch:' ${branch})" --allow-empty
+    rev=$(git rev-parse HEAD)
+    git checkout ${branch} 2>/dev/null >/dev/null
+    git reset --hard ${rev}
 fi

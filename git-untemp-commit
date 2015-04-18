@@ -1,6 +1,21 @@
 #!/bin/bash -ue
 
 subj=`git show HEAD --format="%s" -s`
+if [ "${subj}" == "TEMP-COMMIT: rebase-merge" ] ; then
+    echo Detected rebase
+    git checkout `git rev-parse HEAD` 2>/dev/null
+    git reset --soft HEAD^
+    git reset HEAD .
+    mv .GIT-TEMP-COMMIT-STATE .git/rebase-merge
+elif [ "${subj}" == "TEMP-COMMIT: rebase-apply" ] ; then
+    echo Detected rebase
+    git checkout `git rev-parse HEAD` 2>/dev/null
+    git reset --soft HEAD^
+    git reset HEAD .
+    mv .GIT-TEMP-COMMIT-STATE .git/rebase-apply
+fi
+
+subj=`git show HEAD --format="%s" -s`
 if [ "${subj}" == "TEMP-COMMIT: untracked" ] ; then
     git reset --soft HEAD^
     git reset HEAD .
@@ -16,3 +31,5 @@ subj=`git show HEAD --format="%s" -s`
 if [ "${subj}" == "TEMP-COMMIT: staged" ] ; then
     git reset --soft HEAD^
 fi
+
+git-index-unmerged-to-regular-codec.py decode
