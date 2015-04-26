@@ -1,0 +1,82 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import tempfile
+import time
+import re
+import cPickle
+
+EDITOR="EDITOR.TEMP"
+
+class TempFile(object):
+    filename = None
+
+    class Info(dict):
+        def __init__(self, cherry_picked_branch = None, original_branch = None):
+            self.cherry_picked_branch = cherry_picked_branch
+            self.original_branch = original_branch
+
+    @classmethod
+    def write(selfclass, v):
+        f = open(selfclass.tempfile, "w")
+        f.write(v)
+        f.close()
+
+    @classmethod
+    def read(selfclass):
+        return open(selfclass.tempfile).read()
+
+    @staticmethod
+    def load():
+        info = TempFile.Info()
+        vars(info).update(cPickle.loads(TempFile.read()))
+        return info
+
+    @staticmethod
+    def save(info):
+        TempFile.write(cPickle.dumps(vars(info)))
+
+def editor_commit_editmsg(filename):
+    info = TempFile.load()
+    f = open(filename)
+    output = []
+    for line in f:
+        output.append(line)
+    output.append("(representive of original merge " + info.original_branch + ")\n")
+    f.close()
+    f = open(filename, "w")
+    f.write(''.join(output))
+    f.close()
+    TempFile.save(info)
+
+def main():
+    if len(sys.argv) != 3 or ('--help' in sys.argv):
+        print "Syntax: "
+        print "    %s [branch-to-merge-ff] [original-merge-commit-to-mention]" % (
+            os.path.basename(sys.argv[0]), )
+        print
+        sys.exit(1)
+        return
+
+    if len(sys.argv) >= 4 and sys.argv[1] == EDITOR:
+        TempFile.tempfile = sys.argv[2]
+        filename = sys.argv[3]
+        print filename
+        if filename.endswith('/MERGE_MSG'):
+            editor_commit_editmsg(filename)
+        return
+
+    cherry_picked_branch, original_branch = sys.argv[1:3]
+    info = TempFile.Info(cherry_picked_branch, original_branch)
+    TempFile.tempfile = tempfile.mktemp("git-rebase-numberer")
+    TempFile.save(info)
+    try:
+        os.putenv("GIT_EDITOR", sys.argv[0] + " " + EDITOR + " " + TempFile.tempfile)
+        cmd = ["git", "merge", "--no-ff", cherry_picked_branch]
+        os.spawnvp(os.P_WAIT, "git", cmd)
+    finally:
+        os.unlink(TempFile.tempfile)
+
+if __name__ == "__main__":
+    main()
