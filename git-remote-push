@@ -22,7 +22,10 @@ if [ -z "$remote_path" ] ; then
 fi
 
 branch=master
-version=`git-temp-make`
+
+git-bottle
+version=`git rev-parse HEAD`
+git-unbottle
 
 git push -f ${dest}:${remote_path} ${version}:${branch}
 ssh -t ${dest} "cd ${remote_path} && git reset --hard ${branch}"

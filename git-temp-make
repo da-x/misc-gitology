@@ -1,5 +1,0 @@
-#!/bin/bash -ue
-
-git-entemp-commit 1>/dev/null
-git rev-parse HEAD
-git-untemp-commit 1>/dev/null

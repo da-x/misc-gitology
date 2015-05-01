@@ -1,0 +1,31 @@
+#!/bin/bash -ue
+
+if [ "$#" -ne 1 ] ; then
+    echo "Expected host:path"
+    exit -1
+fi
+
+X="$1"
+arr=(`echo $X | tr ':' ' '`)
+
+dest=${arr[0]}
+remote_path=${arr[1]}
+
+if [ -z "$dest" ] ; then
+    echo "Destination not specified"
+    exit -1
+fi
+
+if [ -z "$remote_path" ] ; then
+    echo "Path on destination not specified"
+    exit -1
+fi
+
+branch=master
+
+ssh -t ${dest} "mkdir -p ${remote_path} && cd ${remote_path} && git init" || exit -1
+ssh -t ${dest} "cd ${remote_path} && git config receive.denyCurrentBranch no" || exit -1
+ssh -t ${dest} "cd ${remote_path} && git init && touch nothing && git add nothing" || exit -1
+ssh -t ${dest} "cd ${remote_path} && git commit -m nothing --author='nothing <nothing@nothing.com>'" || exit -1
+
+git-remote-push $1

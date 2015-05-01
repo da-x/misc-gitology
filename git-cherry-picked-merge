@@ -51,20 +51,20 @@ def editor_commit_editmsg(filename):
     TempFile.save(info)
 
 def main():
-    if len(sys.argv) != 3 or ('--help' in sys.argv):
-        print "Syntax: "
-        print "    %s [branch-to-merge-ff] [original-merge-commit-to-mention]" % (
-            os.path.basename(sys.argv[0]), )
-        print
-        sys.exit(1)
-        return
-
     if len(sys.argv) >= 4 and sys.argv[1] == EDITOR:
         TempFile.tempfile = sys.argv[2]
         filename = sys.argv[3]
         print filename
         if filename.endswith('/MERGE_MSG'):
             editor_commit_editmsg(filename)
+        return
+
+    if len(sys.argv) != 3 or ('--help' in sys.argv):
+        print "Syntax: "
+        print "    %s [branch-to-merge-ff] [original-merge-commit-to-mention]" % (
+            os.path.basename(sys.argv[0]), )
+        print
+        sys.exit(1)
         return
 
     cherry_picked_branch, original_branch = sys.argv[1:3]
