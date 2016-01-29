@@ -1,11 +1,12 @@
 #!/bin/bash -ue
 
-if [ "$#" -ne 1 ] ; then
+if [ "$#" -eq 0 ] ; then
     echo "Expected host:path"
     exit -1
 fi
 
 X="$1"
+shift 1
 arr=(`echo $X | tr ':' ' '`)
 
 dest=${arr[0]}
@@ -27,5 +28,5 @@ git-bottle
 version=`git rev-parse HEAD`
 git-unbottle
 
-git push -f ${dest}:${remote_path} ${version}:${branch}
+git push "$@" -f ${dest}:${remote_path} ${version}:${branch}
 ssh -t ${dest} "cd ${remote_path} && git reset --hard ${branch}"

@@ -28,4 +28,4 @@ ssh -t ${dest} "cd ${remote_path} && git config receive.denyCurrentBranch no" ||
 ssh -t ${dest} "cd ${remote_path} && git init && touch nothing && git add nothing" || exit -1
 ssh -t ${dest} "cd ${remote_path} && git commit -m nothing --author='nothing <nothing@nothing.com>'" || exit -1
 
-git-remote-push $1
+git-remote-push "$@"
