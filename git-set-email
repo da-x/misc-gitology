@@ -1,0 +1,7 @@
+#!/bin/bash
+
+set -e
+
+dirname=$(basename $(pwd))
+email=$(dirlocalenv bash -c 'echo $EMAIL_SPHERE')
+git config user.email ${email}

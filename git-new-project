@@ -1,5 +1,8 @@
 #!/bin/bash
 
-git init && git add . && git commit -a -m $@
+set -e
 
-
+git init
+git-set-email
+git add .
+git commit -a -m "Initial commit for $dirname"
