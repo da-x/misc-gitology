@@ -1,0 +1,63 @@
+#!/usr/bin/env python
+
+"""
+A very slow version of 'git branch' that shows a tree, according
+to which branch is an ancestor of which other branch.
+"""
+
+import os
+import pty
+import subprocess as sp
+import sys
+import re
+
+def main():
+    master, slave = pty.openpty()
+    cmd = ["/usr/bin/git", "branch"] + sys.argv[1:]
+    tstP = sp.Popen(cmd,
+                    stdin=slave, stdout=slave,
+                    stderr=sp.STDOUT, close_fds=True)
+    os.close(slave)
+    f = os.fdopen(master)
+    data = f.read()
+
+    branches = []
+    for line in data.splitlines():
+        m = re.match(r"^([ *]+)([\x1b][\[][^m]+m)?([^\x1b]*)([\x1b][\[][^m]*m)?$", line)
+        (prefix, ansi1, branch_name, ansi2) = m.groups()
+        if not ansi2:
+            ansi2 = ""
+        if not ansi1:
+            ansi1 = ""
+        branches.append((branch_name, (prefix, ansi1, ansi2), []))
+
+    xbranches = []
+    for (branch_name, info, lst) in list(branches):
+        parents = []
+        for (other_branch_name, _, _) in branches:
+            if other_branch_name != branch_name:
+                cmd = "git merge-base --is-ancestor %s %s" % (other_branch_name, branch_name)
+                r = os.system(cmd)
+                if r == 0:
+                    f = os.popen("git log %s..%s --oneline | wc -l" % (other_branch_name, branch_name), "r")
+                    distance = int(f.read())
+                    parents.append((distance, other_branch_name))
+        if not parents:
+            xbranches.append((branch_name, info, lst))
+        else:
+            parents.sort()
+            for (other_branch_name, _, other_lst) in list(branches):
+                if other_branch_name == parents[0][1]:
+                    other_lst.append((branch_name, info, lst))
+                    break
+
+    def f(lst, level):
+        for (branch_name, (prefix, ansi1, ansi2), subs) in lst:
+            print prefix + level + ansi1 + branch_name + ansi2
+            if subs:
+                f(subs, level = level + "  ")
+
+    f(xbranches, level="")
+
+if __name__ == "__main__":
+    main()
