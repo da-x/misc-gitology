@@ -3,16 +3,16 @@
 # Continue a rebase, `am`, a cherry-pick or a revert, depending on the situation.
 set -e
 
-git_dir=$(git rev-parse --git-dir)
-if [[ -e ${git_dir}/CHERRY_PICK_HEAD ]] ; then
+git_dir="$(git rev-parse --git-dir)"
+if [[ -e "${git_dir}/CHERRY_PICK_HEAD" ]] ; then
     exec git cherry-pick --continue "$@"
-elif [[ -e ${git_dir}/REVERT_HEAD ]] ; then
+elif [[ -e "${git_dir}/REVERT_HEAD" ]] ; then
     exec git revert --continue "$@"
-elif [[ -e ${git_dir}/rebase-apply/applying ]] ; then
+elif [[ -e "${git_dir}/rebase-apply/applying" ]] ; then
     exec git am --continue "$@"
-elif [[ -e ${git_dir}/rebase-apply ]] ; then
+elif [[ -e "${git_dir}/rebase-apply" ]] ; then
     exec git rebase --continue "$@"
-elif [[ -e ${git_dir}/rebase-merge ]] ; then
+elif [[ -e "${git_dir}/rebase-merge" ]] ; then
     exec git rebase --continue "$@"
 else
     echo git-continue: unknown state
