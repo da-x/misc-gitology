@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Set my per-repository credentials using dirlocalenv.
+
 set -e
 
 dirname=$(basename $(pwd))
