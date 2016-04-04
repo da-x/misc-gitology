@@ -1,13 +1,13 @@
-#!/bin/bash -ue
+#!/bin/sh -ue
 
 #
 # What is the commit we are trying to apply now during
 # rebase? This answers the question.
 #
 
-if [[ -e .git/rebase-apply/original-commit ]] ; then
+if [ -e .git/rebase-apply/original-commit ] ; then
     cat .git/rebase-apply/original-commit
     exit 0
 fi
 
-exit -2
+exit 1

@@ -1,23 +1,23 @@
-#!/bin/bash
+#!/bin/sh
 
 # Abort a rebase, merge, `am`, a cherry-pick or a revert, depending on the situation.
 
 set -e
 git_dir="$(git rev-parse --git-dir)"
 
-if [[ -e "${git_dir}/CHERRY_PICK_HEAD" ]] ; then
+if [ -e "${git_dir}/CHERRY_PICK_HEAD" ] ; then
     exec git cherry-pick --abort "$@"
-elif [[ -e "${git_dir}/REVERT_HEAD" ]] ; then
+elif [ -e "${git_dir}/REVERT_HEAD" ] ; then
     exec git revert --abort "$@"
-elif [[ -e "${git_dir}/rebase-apply/applying" ]] ; then
+elif [ -e "${git_dir}/rebase-apply/applying" ] ; then
     exec git am --abort "$@"
-elif [[ -e "${git_dir}/rebase-apply" ]] ; then
+elif [ -e "${git_dir}/rebase-apply" ] ; then
     exec git rebase --abort "$@"
-elif [[ -e "${git_dir}/rebase-merge" ]] ; then
+elif [ -e "${git_dir}/rebase-merge" ] ; then
     exec git rebase --abort "$@"
-elif [[ -e "${git_dir}/MERGE_MODE" ]] ; then
+elif [ -e "${git_dir}/MERGE_MODE" ] ; then
     exec git merge --abort "$@"
 else
-    echo git-abort: unknown state
-    exit -1
+    echo "git-abort: unknown state" >&2
+    exit 1
 fi
