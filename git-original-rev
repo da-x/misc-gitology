@@ -1,9 +1,12 @@
-#!/usr/bin/env bash -ue
+#!/usr/bin/env bash
 
 #
 # What is the commit we are trying to apply now during
 # rebase? This answers the question.
 #
+
+set -u
+set -e
 
 if [[ -e .git/rebase-apply/original-commit ]] ; then
     cat .git/rebase-apply/original-commit

@@ -1,9 +1,12 @@
-#!/usr/bin/env bash -ue
+#!/usr/bin/env bash
 
 if [ "$#" -ne 1 ] ; then
     echo "Expected host:path"
     exit -1
 fi
+
+set -e
+set -u
 
 X="$1"
 arr=(`echo $X | tr ':' ' '`)

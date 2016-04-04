@@ -1,9 +1,12 @@
-#!/usr/bin/env bash -ue
+#!/usr/bin/env bash
 
 if [ "$#" -eq 0 ] ; then
     echo "Expected host:path"
     exit -1
 fi
+
+set -u
+set -e
 
 X="$1"
 shift 1
