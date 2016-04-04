@@ -1,25 +1,22 @@
-#!/bin/bash -ue
+#!/bin/sh -ue
 
 if [ "$#" -eq 0 ] ; then
-    echo "Expected host:path"
-    exit -1
+    echo "Expected host:path" >&2
+    exit 1
 fi
 
-X="$1"
-shift 1
-arr=(`echo $X | tr ':' ' '`)
-
-dest=${arr[0]}
-remote_path=${arr[1]}
+IFS=: read dest remote_path << _END
+$1
+_END
 
 if [ -z "$dest" ] ; then
-    echo "Destination not specified"
-    exit -1
+    echo "Destination not specified" >&2
+    exit 1
 fi
 
 if [ -z "$remote_path" ] ; then
-    echo "Path on destination not specified"
-    exit -1
+    echo "Path on destination not specified" >&2
+    exit 1
 fi
 
 branch=master

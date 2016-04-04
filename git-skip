@@ -1,16 +1,16 @@
-#!/bin/bash
+#!/bin/sh
 
 # Skip a patch in a rebase or am, depending on the situation.
 set -e
 
 git_dir="$(git rev-parse --git-dir)"
-if [[ -e "${git_dir}/rebase-apply/applying" ]] ; then
+if [ -e "${git_dir}/rebase-apply/applying" ] ; then
     exec git am --skip "$@"
-elif [[ -e "${git_dir}/rebase-apply" ]] ; then
+elif [ -e "${git_dir}/rebase-apply" ] ; then
     exec git rebase --skip "$@"
-elif [[ -e "${git_dir}/rebase-merge" ]] ; then
+elif [ -e "${git_dir}/rebase-merge" ] ; then
     exec git rebase --skip "$@"
 else
-    echo git-continue: unknown state
-    exit -1
+    echo "git-continue: unknown state" >&2
+    exit 1
 fi
