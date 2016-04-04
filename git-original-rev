@@ -1,4 +1,4 @@
-#!/bin/bash -ue
+#!/usr/bin/env bash -ue
 
 #
 # What is the commit we are trying to apply now during

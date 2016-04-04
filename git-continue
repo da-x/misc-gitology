@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Continue a rebase, `am`, a cherry-pick or a revert, depending on the situation.
 set -e

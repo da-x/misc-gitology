@@ -1,4 +1,4 @@
-#!/bin/bash -ue
+#!/usr/bin/env bash -ue
 
 if [ "$#" -eq 0 ] ; then
     echo "Expected host:path"
