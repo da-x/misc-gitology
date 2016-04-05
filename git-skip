@@ -11,6 +11,6 @@ elif [[ -e "${git_dir}/rebase-apply" ]] ; then
 elif [[ -e "${git_dir}/rebase-merge" ]] ; then
     exec git rebase --skip "$@"
 else
-    echo git-continue: unknown state
+    echo git-continue: unknown state >&2
     exit -1
 fi

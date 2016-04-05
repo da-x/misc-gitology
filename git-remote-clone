@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 if [ "$#" -ne 1 ] ; then
-    echo "Expected host:path"
+    echo "Expected host:path" >&2
     exit -1
 fi
 
@@ -15,12 +15,12 @@ dest=${arr[0]}
 remote_path=${arr[1]}
 
 if [ -z "$dest" ] ; then
-    echo "Destination not specified"
+    echo "Destination not specified" >&2
     exit -1
 fi
 
 if [ -z "$remote_path" ] ; then
-    echo "Path on destination not specified"
+    echo "Path on destination not specified" >&2
     exit -1
 fi
 
