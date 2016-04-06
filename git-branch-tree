@@ -13,7 +13,7 @@ import re
 
 def main():
     master, slave = pty.openpty()
-    cmd = ["/usr/bin/git", "branch"] + sys.argv[1:]
+    cmd = ["git", "branch"] + sys.argv[1:]
     tstP = sp.Popen(cmd,
                     stdin=slave, stdout=slave,
                     stderr=sp.STDOUT, close_fds=True)
