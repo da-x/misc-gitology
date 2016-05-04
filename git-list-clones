@@ -1,0 +1,38 @@
+#!/usr/bin/env python
+
+import sys
+import os
+
+"""
+
+Recursive directory traversal just in order to find clones. Works quite fast
+becase we stop at the clones.
+
+"""
+
+def recurse_dir(pathname):
+    if os.path.exists(os.path.join(pathname, ".git")):
+        return [pathname]
+
+    names = os.listdir(pathname)
+    lst = []
+    for name in names:
+        fullname = os.path.join(pathname, name)
+        if os.path.islink(fullname):
+            continue
+        if os.path.isdir(fullname):
+            lst.extend(recurse_dir(fullname))
+    return lst
+
+def main(args):
+    if len(args) == 1:
+        cwd = "."
+    else:
+        cwd = args[1]
+    lst = recurse_dir(cwd)
+    lst.sort()
+    for name in lst:
+        print name
+
+if __name__ == "__main__":
+    main(sys.argv)
