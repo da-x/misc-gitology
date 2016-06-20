@@ -28,7 +28,7 @@ branch=master
 
 ssh -t ${dest} "mkdir -p ${remote_path} && cd ${remote_path} && git init" || exit -1
 ssh -t ${dest} "cd ${remote_path} && git config receive.denyCurrentBranch no" || exit -1
-ssh -t ${dest} "cd ${remote_path} && git init && touch nothing && git add nothing" || exit -1
-ssh -t ${dest} "cd ${remote_path} && git commit -m nothing --author='nothing <nothing@nothing.com>'" || exit -1
+ssh -t ${dest} "cd ${remote_path} && git init && touch nothing && git  -c user.name=empty -c user.email=empty@empty add nothing" || exit -1
+ssh -t ${dest} "cd ${remote_path} && git -c user.name=empty -c user.email=empty@empty commit -m nothing --author='nothing <nothing@nothing.com>'" || exit -1
 
 git-remote-push "$@"
