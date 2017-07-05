@@ -1,14 +1,38 @@
 #!/bin/bash
 
 #
-# Takes all existing modifications and fixups for each file, 
+# Takes all existing modifications and fixups for each file,
 # the last commit that touched the file.
+#
+# Syntax:
+#
+#     fix-to-last (BASE)
+#
+# Optional [BASE] commitish limits the lookup for commits.
 #
 # By https://github.com/sinelaw
 #
 
 cd $(git rev-parse --git-dir)/.. || exit -1
 
+if [[ "$1" != "" ]] ; then
+   BASE="${1}.."
+else
+   BASE=
+fi
+
+git diff --cached --exit-code > /dev/null
+
+if [[ "$?" != "0" ]] ; then
+    echo "fix-to-last: modified but uncommited changes, doing nothing"
+    exit -1
+fi
+
 git status --porcelain -uno | cut -d' ' -f3- | while read filename; do
-   git commit --fixup=$(git log -1 --format="%H" HEAD -- $filename) $filename || exit -1
+    last=$(git log -1 --format="%H" ${BASE}HEAD -- $filename)
+    if [[ "$last" == "" ]] ; then
+        echo fix-to-last: skipped $filename
+    else
+        git commit --fixup=${last} $filename || exit -1
+    fi
 done
