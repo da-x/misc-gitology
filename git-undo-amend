@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Undo a `git amend -a` using the get log. Note that it cannot detect
+# whether `git amend -a` was the last operation, so if that's not the
+# case it would behave unexpectedly.
+
+set -e
+
+git diff --exit-code
+git diff --cached --exit-code
+
+CHANGES=$(git rev-parse HEAD)
+
+git reset --hard HEAD@{1}
+git checkout $CHANGES -- .

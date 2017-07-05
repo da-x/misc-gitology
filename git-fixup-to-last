@@ -1,0 +1,14 @@
+#!/bin/bash
+
+#
+# Takes all existing modifications and fixups for each file, 
+# the last commit that touched the file.
+#
+# By https://github.com/sinelaw
+#
+
+cd $(git rev-parse --git-dir)/.. || exit -1
+
+git status --porcelain -uno | cut -d' ' -f3- | while read filename; do
+   git commit --fixup=$(git log -1 --format="%H" HEAD -- $filename) $filename || exit -1
+done
