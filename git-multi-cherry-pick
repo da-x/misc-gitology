@@ -1,0 +1,94 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import tempfile
+import time
+import re
+import cPickle
+
+EDITOR="EDITOR.TEMP"
+
+class TempFile(object):
+    filename = None
+
+    class Info(dict):
+        def __init__(self, cherry_picked_branch = None, original_branch = None):
+            self.cherry_picked_branch = cherry_picked_branch
+            self.original_branch = original_branch
+
+    @classmethod
+    def write(selfclass, v):
+        f = open(selfclass.tempfile, "w")
+        f.write(v)
+        f.close()
+
+    @classmethod
+    def read(selfclass):
+        return open(selfclass.tempfile).read()
+
+    @staticmethod
+    def load():
+        info = TempFile.Info()
+        vars(info).update(cPickle.loads(TempFile.read()))
+        return info
+
+    @staticmethod
+    def save(info):
+        TempFile.write(cPickle.dumps(vars(info)))
+
+def editor_commit_editmsg(filename):
+    info = TempFile.load()
+    f = open(filename)
+    output = []
+    for line in f:
+        output.append(line)
+    output.append("(representive of original merge " + info.original_branch + ")\n")
+    f.close()
+    f = open(filename, "w")
+    f.write(''.join(output))
+    f.close()
+    TempFile.save(info)
+
+
+def main():
+    if len(sys.argv) <= 2:
+        print "syntax: git-multi-cherry-pick [description-file]"
+        return
+
+    commits = open(sys.argv[1]).readlines()
+
+    commits_succeeded = []
+    commits_failed = []
+
+    while len(commits):
+        commits_retry = []
+
+        for commit in commits:
+            if '#' in commit:
+                commit_id = commit.split('#', 1)[0]
+            else:
+                commit_id = commit
+            ret = os.system("git cherry-pick %s" % (commit_id, ))
+            if ret != 0:
+                commits_retry.append(commit)
+                os.system("git cherry-pick --abort")
+            else:
+                commits_succeeded.append(commit)
+
+        if len(commits_retry) == len(commits):
+            commits_failed = commits_retry
+            break
+        else:
+            commits = commits_retry
+
+    print "succeeded: "
+    for commit in commits_succeeded:
+        print commit
+
+    print "failed: "
+    for commit in commits_failed:
+        print commit
+
+if __name__ == "__main__":
+    main()
