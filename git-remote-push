@@ -1,16 +1,35 @@
 #!/usr/bin/env bash
 
 if [ "$#" -eq 0 ] ; then
-    echo "Expected host:path" >&2
+    echo "Expected host:path or remote-name" >&2
     exit -1
 fi
 
 set -u
 set -e
 
-X="$1"
+REMOTE_DESC="$1"
+
 shift 1
-arr=(`echo $X | tr ':' ' '`)
+arr=(`echo $REMOTE_DESC | tr ':' ' '`)
+
+if [[ ${#arr[@]} == 1 ]] ; then
+    # No ':" in provided name
+    while read -r line ; do
+	remote_name=$(echo $line | awk -F" " '{print $1}')
+	remote_url=$(echo $line | awk -F" " '{print $2}')
+	if [[ "${remote_name}" == "${REMOTE_DESC}" ]] ; then
+	    REMOTE_DESC=${remote_url}
+	    break
+	fi
+    done < <(git remote -v | grep push)
+
+    arr=(`echo $REMOTE_DESC | tr ':' ' '`)
+    if [[ ${#arr[@]} == 1 ]] || [[ ${#arr[@]} == 0 ]]; then
+	echo "Could not figure out remote path"
+	exit -1
+    fi
+fi
 
 dest=${arr[0]}
 remote_path=${arr[1]}
