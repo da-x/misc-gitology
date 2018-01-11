@@ -1,0 +1,124 @@
+#!/usr/bin/env python
+
+"""
+
+Show remote and local branch sorted by last commit time, using colors to indicate Githash.
+
+Remote branches can be filtered by configuring fancy-branch-list.prefix, e.g.:
+
+    git config fancy-branch-list.prefix origin/dan/
+
+"""
+
+import os
+import datetime
+import time
+from dateutil import parser
+
+f = os.popen("git config fancy-branch-list.prefix", "r")
+remote_prefix = f.read().strip()
+f.close()
+
+cmd = (
+        """git for-each-ref "$@" --sort=-committerdate refs/heads/ refs/remotes/"""
+        + remote_prefix +
+        """  --format="%(committerdate) ;; %(refname) ;; %(objectname) ;; %(subject)" """
+        )
+
+branch_list = os.popen(cmd, "r").read()
+def color24(r, g, b1):
+    return "\x1b[38;2;%d;%d;%dm" % (r, g, b1)
+def backcolor24(r, g, b1):
+    return "\x1b[48;2;%d;%d;%dm" % (r, g, b1)
+def colorreset():
+    return "\x1b[0;m"
+
+def pretty_date(diff):
+    """
+    Get a datetime object or a int() Epoch timestamp and return a
+    pretty string like 'an hour ago', 'Yesterday', '3 months ago',
+    'just now', etc
+    """
+    second_diff = long(diff)
+    day_diff = long(diff / 86400)
+
+    if day_diff < 0:
+        return ''
+
+    if day_diff == 0:
+        if second_diff < 10:
+            return "just now"
+        if second_diff < 60:
+            return str(second_diff) + " seconds ago"
+        if second_diff < 120:
+            return "a minute ago"
+        if second_diff < 3600:
+            return str(second_diff / 60) + " minutes ago"
+        if second_diff < 7200:
+            return "an hour ago"
+        if second_diff < 86400:
+            return str(second_diff / 3600) + " hours ago"
+    if day_diff == 1:
+        return "Yesterday"
+    if day_diff < 7:
+        return str(day_diff) + " days ago"
+    if day_diff < 31:
+        return str(day_diff / 7) + " weeks ago"
+    if day_diff < 365:
+        return str(day_diff / 30) + " months ago"
+    return str(day_diff / 365) + " years ago"
+
+lst = []
+nb = 0
+branch_type = {}
+branch_hash = {}
+for line in branch_list.splitlines():
+    (ts, b, h, s) = line.split(' ;; ')
+    place = "        "
+    is_remote = False
+    if b.startswith('refs/heads/'):
+        b = b[len('refs/heads/'):]
+    if b.startswith('refs/remotes/origin/'):
+        b = b[len('refs/remotes/origin/'):]
+        place = "(remote)"
+        is_remote = True
+    if b not in branch_type:
+        if is_remote:
+            branch_type[b] = "remote-single"
+        else:
+            branch_type[b] = "local-single"
+    else:
+        if branch_hash[b] == h:
+            branch_type[b] = "remote-and-local-ident"
+        else:
+            if branch_type[b] == "remote-single":
+                if not is_remote:
+                    branch_type[b] = "remote-and-local-older"
+            else:
+                if is_remote:
+                    branch_type[b] = "local-and-remote-older"
+
+    branch_hash[b] = h
+    lst.append((ts, b, h, s, place))
+    nb = max(nb, len(b))
+
+branchDictTypes = {
+    "local-single"           : color24( 95, 185, 235),
+    "remote-single"          : color24(168, 168, 255),
+    "local-and-remote-older" : color24(255, 255,  55),
+    "remote-and-local-ident" : color24(  0, 255,   0),
+    "remote-and-local-older" : color24(255,  50,  50),
+}
+
+lst.reverse()
+for (ts, b, h, s, place) in lst:
+    h = h[:12]
+    branch_color = branchDictTypes[branch_type[b]]
+    back_color = ''
+    ts_v = parser.parse(ts)
+    age = (time.time() - time.mktime(ts_v.timetuple()))
+    if age > 86400 * 31:
+        back_color = backcolor24(40, 40, 40)
+    print ("%s %s  %-16s %s %s %s%-" + str(nb) + "s%s %s") % (
+        back_color, parser.parse(ts), pretty_date(age), 
+        h, place, branch_color, b, colorreset(),  s)
