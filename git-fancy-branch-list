@@ -4,6 +4,8 @@
 
 Show remote and local branch sorted by last commit time, using colors to indicate Githash.
 
+If '-g' is provided, show branches that are identical to ones in remote.
+
 Remote branches can be filtered by configuring fancy-branch-list.prefix, e.g.:
 
     git config fancy-branch-list.prefix origin/dan/
@@ -11,6 +13,7 @@ Remote branches can be filtered by configuring fancy-branch-list.prefix, e.g.:
 """
 
 import os
+import sys
 import datetime
 import time
 from dateutil import parser
@@ -110,9 +113,13 @@ branchDictTypes = {
     "remote-and-local-older" : color24(255,  50,  50),
 }
 
+show_remote_and_local_ident = '-g' in sys.argv
+
 lst.reverse()
 for (ts, b, h, s, place) in lst:
     h = h[:12]
+    if branch_type[b] == "remote-and-local-ident" and not show_remote_and_local_ident:
+        continue
     branch_color = branchDictTypes[branch_type[b]]
     back_color = ''
     ts_v = parser.parse(ts)
