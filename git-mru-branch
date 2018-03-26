@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+import os
+import re
+
+#
+# Here, the recently checked out branches from the reflog are
+# presented sorted according to the most recently checked out branch.
+#
+# Can be used with `pick`:
+#
+#     https://github.com/calleerlandsson/pick
+#
+# Git 'git co -' on steroids.
+#
+
+m = re.compile(r"([0-9]+[ \t]+[+-/]?[0-9]+)[ \t]+checkout: moving from ([.A-Za-z0-9_/-]+) to ([.A-Za-z0-9_/-]+)")
+
+git_dir = os.popen("git rev-parse --git-dir").read().strip()
+existing_branches = set([l[2:].strip() for l in os.popen("git branch").readlines()])
+head = open(os.path.join(git_dir, "logs", "HEAD")).readlines()
+head.reverse()
+lst = []
+lst_set = set()
+for i in head:
+    r = m.search(i)
+    if not r:
+        continue
+    (timestamp, from_src, to_dest) = r.groups(0)
+    for name in [to_dest, from_src]:
+        if name not in lst_set and name in existing_branches:
+            lst.append(name)
+            lst_set.add(name)
+
+for branch in lst:
+    print(branch)
