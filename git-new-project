@@ -2,7 +2,15 @@
 
 set -e
 
+dirname=$(basename $(realpath $(pwd)))
+
 git init
 git-set-email
 git add .
-git commit -a -m "Initial commit for $dirname"
+
+if [[ "$(git status --porcelain | wc -l)" == "0" ]] ; then
+    touch  .gitignore
+    git add .
+fi
+
+git commit -a -m "Initial commit for \`$dirname\`"
