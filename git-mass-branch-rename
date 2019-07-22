@@ -1,0 +1,83 @@
+#!/usr/bin/env python
+
+"""
+Git branch editor.
+
+This script spawns the editor configured in Git, in order to edit the local
+list of branches as if it was a text file. It allows removing branches, adding
+branches, changing branches' names, and setting a branch to a different
+githash.
+"""
+
+import os
+import pty
+import subprocess as sp
+import sys
+import re
+import tempfile
+
+PREFIX = "refs/heads/"
+
+def dict_diff(a, b):
+    for key in list(set(a.keys()) | set(b.keys())):
+        yield (a.get(key, None), b.get(key, None))
+
+def main():
+    x = os.popen("git show-ref", "r")
+    data = x.read()
+    x.close()
+
+    branches = {}
+    idx = 1
+    for line in data.splitlines():
+        m = re.match(r"^([a-f0-9]+) ([^ ]+)$", line)
+        (githash, refname) = m.groups()
+        if not refname.startswith(PREFIX):
+            continue
+        branches[idx] = (githash[:12], refname)
+        idx += 1
+
+    editor = os.popen("git config core.editor", "r").read().strip()
+    filename = tempfile.mktemp("git-mass-branch-rename")
+    filehandle = open(filename, "w")
+    for (key, (githash, refname)) in branches.iteritems():
+        refname = refname[len(PREFIX):]
+        githash = githash[:12]
+        print >>filehandle, "%d: %s %s" % (key, githash, refname)
+    filehandle.close()
+
+    cmd = "%s %s" % (editor, filename)
+    os.system(cmd)
+
+    output = {}
+    for line in open(filename):
+        m = re.match(r"^([0-9]+): ([a-f0-9]+) ([^ ]+)$", line.strip())
+        (idx, githash, new_name) = m.groups(0)
+        idx = int(idx)
+        output[idx] = (githash, new_name)
+
+    os.unlink(filename)
+
+    for (orig, after) in dict_diff(branches, output):
+        cmd = None
+        if after is None and orig is not None:
+            (orig_githash, orig_refname) = orig
+            cmd = "git update-ref -d %s" % (orig_refname, )
+        elif orig is not None and after is not None:
+            (orig_githash, orig_refname) = orig
+            (new_githash, new_name) = after
+            branch_name = orig_refname[len(PREFIX):]
+            cmd = ""
+            if orig_githash[:12] != new_githash:
+                cmd = "git update-ref %s %s" % (orig_refname, new_githash)
+            if branch_name != new_name:
+                if cmd:
+                    cmd += "&& "
+                cmd += "git branch -M %s %s" % (branch_name, new_name)
+
+        if cmd:
+            print cmd
+            os.system(cmd)
+
+if __name__ == "__main__":
+    main()
