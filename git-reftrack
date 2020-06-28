@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+
+"""
+
+The purpose of this script is to help track rebases of a local branch using a
+special meta-branch called a 'reftrack' branch. This form of tracking can be
+considered as a glorified 'reflog', that is also publishable, better described,
+and an alternative to littering a repository with adhoc tags of versions that
+you may not want to keep forever.
+
+The script is invoked simply via:
+
+    git-reftrack -b [base]
+
+Where `base` is the base of the current branch (i.e the most recent commit that
+this branch does not add). The commits in the branch are calculated from
+`[base]..HEAD`.
+
+When the current branch is named 'x', the created or updated reftrack branch
+is named 'x.reftrack'.
+
+The structure of the reftrack branch is the following;
+
+* Each commit is a merge commit with the following parents
+
+    [prev-reftrack] [version] [base]
+Or
+    [version] [base]
+
+  For the first commit.
+
+* The commit message is of the format:
+
+```
+git-reftrack: {subject}
+
+Base: {ref description}
+Commits:
+
+{list of commits in the branch}
+```
+
+"""
+
+import sys
+import os
+import tempfile
+import re
+from optparse import OptionParser
+
+def system(cmd):
+    return os.system(cmd)
+
+def main():
+    parser = OptionParser()
+    parser.add_option("-b", "--base", dest="base", help="base branch")
+    (options, args) = parser.parse_args()
+    base = options.base
+    if base == "":
+        print("'base' was not specified, aborted", file=sys.stderr)
+        return
+
+    base_state = os.popen(f"git show-ref {base}").read().strip()
+    if base_state == "":
+        print("'base' is invalid", file=sys.stderr)
+        return
+
+    current_branch = os.popen("git branch --show-current").read().strip()
+    if current_branch == "":
+        return
+
+    reftrack_branch = f"{current_branch}.reftrack"
+    reftrack_state = os.popen(f"git show-ref {reftrack_branch}").read().strip()
+    state = "HEAD"
+
+    tf = tempfile.NamedTemporaryFile()
+    tempname = tf.name
+    first_line = f"git-reftrack: \n\n".encode('utf-8')
+    tf.write(f"git-reftrack: \n\n".encode('utf-8'))
+    tf.write(f"Base: {base_state}\n".encode('utf-8'))
+    tf.write(f"Commits:\n\n".encode('utf-8'))
+    changes = os.popen(f"git log --oneline {base}..{state} --no-decorate").read().strip()
+    tf.write((changes + "\n").encode('utf-8'))
+    tf.flush()
+
+    editor = os.popen("git config core.editor").read().strip()
+
+    system(f"{editor} {tempname}")
+
+    first_line = open(tempname).readlines()[0]
+    m = re.match("git-reftrack: .+", first_line)
+    if not m:
+        print("commit message not valid, aborted", file=sys.stderr)
+        return
+
+    cmd = f'git commit-tree {state}^{{tree}} -F {tempname}'
+    if reftrack_state != '':
+        cmd += f' -p {reftrack_branch}'
+    cmd += f" -p {state} -p {base}"
+
+    commit_object = os.popen(cmd).read().strip()
+    if commit_object == "":
+        raise Exception("error creating commit object")
+
+    cmd = f"git update-ref refs/heads/{reftrack_branch} {commit_object}"
+    r = system(cmd)
+    tf.close()
+
+    print(f"Branch {reftrack_branch} updated.")
+
+if __name__ == "__main__":
+    main()
