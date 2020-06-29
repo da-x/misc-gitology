@@ -55,19 +55,23 @@ def main():
     parser = OptionParser()
     parser.add_option("-b", "--base", dest="base", help="base branch")
     (options, args) = parser.parse_args()
-    base = options.base
-    if base == "":
-        print("'base' was not specified, aborted", file=sys.stderr)
-        return
-
-    base_state = os.popen(f"git show-ref {base}").read().strip()
-    if base_state == "":
-        print("'base' is invalid", file=sys.stderr)
-        return
-
     current_branch = os.popen("git branch --show-current").read().strip()
-    if current_branch == "":
+    if not current_branch:
+        print("No current branch, aborted", file=sys.stderr)
         return
+
+    base = options.base
+    if not base:
+        base = f"{current_branch}.base"
+        base_state = os.popen(f"git show-ref {base}").read().strip()
+        if base_state == "":
+            print(f"Did not find a default 'base' branch {base}", file=sys.stderr)
+            return
+    else:
+        base_state = os.popen(f"git show-ref {base}").read().strip()
+        if base_state == "":
+            print(f"Base {base} is invalid", file=sys.stderr)
+            return
 
     reftrack_branch = f"{current_branch}.reftrack"
     reftrack_state = os.popen(f"git show-ref {reftrack_branch}").read().strip()
