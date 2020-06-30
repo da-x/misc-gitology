@@ -80,6 +80,44 @@ class RefTrack(object):
                 raise Abort()
         return (base, base_state)
 
+    def get_reftrack_state(self):
+        current_branch = self.current_branch()
+        reftrack_branch = f"{current_branch}.reftrack"
+        reftrack_state = os.popen(f"git show-ref {reftrack_branch}").read().strip()
+        return (reftrack_branch, reftrack_state)
+
+    def get_versions(self):
+        (reftrack_branch, reftrack_state) = self.get_reftrack_state()
+        cmd = f"git log --first-parent {reftrack_branch} --pretty='%H: [%ci] %s' --merges --grep='^git-reftrack:'"
+        lst = os.popen(cmd).readlines()
+        v = []
+        for (idx, line) in enumerate(lst):
+            line = line.strip()
+            if not line:
+                continue
+            (h, message) = line.split(': ', 1)
+            v.append((len(lst) - idx, h[:12], message))
+        return v
+
+    def get_versions_dict(self):
+        v = {}
+        for (id, commit_hash, message) in self.get_versions():
+            v[str(id)] = (commit_hash, message)
+        return v
+
+    def get_reftrack_commits(self, git_hash):
+        cmd = f"git show --pretty='%P' {git_hash}"
+        parents = os.popen(cmd).read().strip().split(' ')
+        if len(parents) == 3:
+            (a, b) = (parents[1], parents[2])
+        else:
+            (a, b) = (parents[0], parents[1])
+        commits = []
+        for line in os.popen(f"git log --oneline {b}..{a} --pretty='%H: [%ci] %s' --no-decorate").readlines():
+            (h, message) = line.split(': ', 1)
+            commits.append((h, message))
+        return commits
+
 def commit(args):
     parser = OptionParser()
     parser.add_option("-b", "--base", dest="base", help="base branch")
@@ -88,9 +126,8 @@ def commit(args):
     rt = RefTrack()
     current_branch = rt.current_branch()
     (base, base_state) = rt.get_base(options.base)
+    (reftrack_branch, reftrack_state) = rt.get_reftrack_state()
 
-    reftrack_branch = f"{current_branch}.reftrack"
-    reftrack_state = os.popen(f"git show-ref {reftrack_branch}").read().strip()
     state = "HEAD"
 
     tf = tempfile.NamedTemporaryFile()
@@ -128,6 +165,77 @@ def commit(args):
 
     print(f"Branch {reftrack_branch} updated.")
 
+def log(args):
+    parser = OptionParser()
+    rt = RefTrack()
+    for (id, commit_hash, message) in rt.get_versions():
+        print(id, commit_hash, message)
+
+def diff_reftracks(rt, source, dest):
+    v = rt.get_versions_dict()
+    a = rt.get_reftrack_commits(v[source][0])
+    b = rt.get_reftrack_commits(v[dest][0])
+
+    outputs = []
+    for z in [a, b]:
+        tf = tempfile.NamedTemporaryFile()
+        for commit in z:
+            (patch_id, commit_id) = os.popen(f"git show {commit[0]} | git patch-id").read().strip().split(' ')
+            tf.write((patch_id + "\n").encode('utf-8'))
+        tf.flush()
+        outputs.append(tf)
+
+    first_idx = 0
+    second_idx = 0
+    for line in os.popen(f"diff -U 10000 -durN {outputs[0].name} {outputs[1].name}").readlines()[3:]:
+        f_id = ("%s:%d" % (source, first_idx))
+        s_id = ("%s:%d" % (dest, second_idx))
+        if line.startswith(' '):
+            patch_id = line.strip()
+            print(' ', 'Id:' + patch_id[:12], "      ", a[first_idx][0][:12], a[first_idx][1].strip())
+            first_idx += 1
+            second_idx += 1
+        elif line.startswith('+'):
+            patch_id = line.strip()[1:]
+            print('\u001b[32m', end='')
+            print('+', 'Id:' +patch_id[:12], ("%6s" % s_id), b[second_idx][0][:12], b[second_idx][1].strip())
+            print('\u001b[0m', end='')
+            second_idx += 1
+        elif line.startswith('-'):
+            patch_id = line.strip()[1:]
+            print('\u001b[31m', end='')
+            print('-', 'Id:' +patch_id[:12], ("%6s" % f_id), a[first_idx][0][:12], a[first_idx][1].strip())
+            print('\u001b[0m', end='')
+            first_idx += 1
+
+def diff(*args):
+    parser = OptionParser()
+    rt = RefTrack()
+
+    v = {}
+    for (id, commit_hash, message) in rt.get_versions():
+        v[str(id)] = (commit_hash, message)
+
+    source = args[0]
+    dest = args[1]
+    if not (':' in source and ":" in dest):
+        return diff_reftracks(rt, source, dest)
+
+    v = rt.get_versions_dict()
+    (source, source_p) = source.split(':', 1)
+    (dest, dest_p) = dest.split(':', 1)
+    a = rt.get_reftrack_commits(v[source][0])
+    b = rt.get_reftrack_commits(v[dest][0])
+    source_commit = a[int(source_p)][0]
+    dest_commit = b[int(dest_p)][0]
+    tf1 = tempfile.NamedTemporaryFile()
+    tf1.write(os.popen(f"git show {source_commit} --no-decorate").read().encode('utf-8'))
+    tf1.flush()
+    tf2 = tempfile.NamedTemporaryFile()
+    tf2.write(os.popen(f"git show {dest_commit} --no-decorate").read().encode('utf-8'))
+    tf2.flush()
+    print(os.popen(f"diff -urN {tf1.name} {tf2.name}").read())
+
 def main():
     parser = OptionParser()
     if len(sys.argv) == 1:
@@ -136,6 +244,10 @@ def main():
         return
     if sys.argv[1] == "commit":
         commit(sys.argv[2:])
+    elif sys.argv[1] == "log":
+        log(sys.argv[2:])
+    elif sys.argv[1] == "diff":
+        diff(sys.argv[2], sys.argv[3])
     else:
         print(f"unknown command {sys.argv[1]}", file=sys.stderr)
         sys.exit(-1)
