@@ -10,7 +10,7 @@ you may not want to keep forever.
 
 The script is invoked simply via:
 
-    git-reftrack -b [base]
+    git-reftrack commit -b [base]
 
 Where `base` is the base of the current branch (i.e the most recent commit that
 this branch does not add). The commits in the branch are calculated from
@@ -51,27 +51,43 @@ from optparse import OptionParser
 def system(cmd):
     return os.system(cmd)
 
-def main():
+class Abort(Exception): pass
+
+class RefTrack(object):
+    def __init__(self):
+        pass
+
+    def current_branch(self):
+        current_branch = os.popen("git branch --show-current").read().strip()
+        if not current_branch:
+            print("No current branch, aborted", file=sys.stderr)
+            raise Abort()
+        return current_branch
+
+    def get_base(self, suggested_base):
+        current_branch = self.current_branch()
+        base = suggested_base
+        if not base:
+            base = f"{current_branch}.base"
+            base_state = os.popen(f"git show-ref {base}").read().strip()
+            if base_state == "":
+                print(f"Did not find a default 'base' branch {base}", file=sys.stderr)
+                raise Abort()
+        else:
+            base_state = os.popen(f"git show-ref {base}").read().strip()
+            if base_state == "":
+                print(f"Base {base} is invalid", file=sys.stderr)
+                raise Abort()
+        return (base, base_state)
+
+def commit(args):
     parser = OptionParser()
     parser.add_option("-b", "--base", dest="base", help="base branch")
-    (options, args) = parser.parse_args()
-    current_branch = os.popen("git branch --show-current").read().strip()
-    if not current_branch:
-        print("No current branch, aborted", file=sys.stderr)
-        return
+    (options, args) = parser.parse_args(args)
 
-    base = options.base
-    if not base:
-        base = f"{current_branch}.base"
-        base_state = os.popen(f"git show-ref {base}").read().strip()
-        if base_state == "":
-            print(f"Did not find a default 'base' branch {base}", file=sys.stderr)
-            return
-    else:
-        base_state = os.popen(f"git show-ref {base}").read().strip()
-        if base_state == "":
-            print(f"Base {base} is invalid", file=sys.stderr)
-            return
+    rt = RefTrack()
+    current_branch = rt.current_branch()
+    (base, base_state) = rt.get_base(options.base)
 
     reftrack_branch = f"{current_branch}.reftrack"
     reftrack_state = os.popen(f"git show-ref {reftrack_branch}").read().strip()
@@ -111,6 +127,18 @@ def main():
     tf.close()
 
     print(f"Branch {reftrack_branch} updated.")
+
+def main():
+    parser = OptionParser()
+    if len(sys.argv) == 1:
+        print("commit - commit a new reftrack change")
+        print("   log - show a log of reftrack changes")
+        return
+    if sys.argv[1] == "commit":
+        commit(sys.argv[2:])
+    else:
+        print(f"unknown command {sys.argv[1]}", file=sys.stderr)
+        sys.exit(-1)
 
 if __name__ == "__main__":
     main()
