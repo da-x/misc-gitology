@@ -78,6 +78,10 @@ class RefTrack(object):
             if base_state == "":
                 print(f"Base {base} is invalid", file=sys.stderr)
                 raise Abort()
+
+        githash = base_state.split(' ', 1)[0]
+        # It may be a git tag, we need a commit hash:
+        base = os.popen(f"git rev-list -n 1 {githash}").read().strip()
         return (base, base_state)
 
     def get_reftrack_state(self):
@@ -241,6 +245,7 @@ def main():
     if len(sys.argv) == 1:
         print("commit - commit a new reftrack change")
         print("   log - show a log of reftrack changes")
+        print("  diff - help to diff two reftrack versions")
         return
     if sys.argv[1] == "commit":
         commit(sys.argv[2:])
