@@ -1,0 +1,35 @@
+#!/bin/bash
+
+TMPFILE=$(mktemp tmp.XXXXXXX.stg-rebase-i)
+EDITOR=$(git config core.editor)
+
+if [[ "$EDITOR" == "" ]]; then
+    EDITOR=vi
+fi
+
+function finish {
+    rm -f ${TMPFILE}
+}
+trap finish EXIT
+stg series > ${TMPFILE}
+
+$EDITOR ${TMPFILE}
+
+if [[ "$?" != "0" ]] ; then
+    echo "stg-rebase-i: aborted"
+    exit -1
+fi
+
+GOTO_PATCH=$(grep '^> ' ${TMPFILE} | cut -c3- | head -n 1)
+cat ${TMPFILE} | cut -c3- > ${TMPFILE}.x
+mv ${TMPFILE}.x ${TMPFILE}
+stg float --series ${TMPFILE}
+
+if [[ "$?" != "0" ]] ; then
+    echo "stg-rebase-i: aborted"
+    exit -1
+fi
+
+if [[ "${GOTO_PATCH}" != "" ]] ; then
+    stg goto ${GOTO_PATCH}
+fi
