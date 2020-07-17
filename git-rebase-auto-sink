@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+
+"""
+
+The purpose of this script is to help doing an automatic rebase 'fixup' for a
+set of commits, where for each fixup commit, we don't know to which commit
+we would like to squash it.
+
+This is similar to the problem that 'git-absorb' [1] is trying to solve.
+
+Algoritm:
+
+   * Take two commit refs from the user:
+
+       [base]         the start of the rebase
+       [sink_start]   the most recent commit that is not part of the fixup group
+
+   * Rebase the list commits in `[sink_start]..` in reverse to make sure that
+     each commit in the list is independent.
+
+   * For each commit in `[sink_start]..`, do a binary search using 'git rebase'
+     over `[base]..[sink_start]` to find the farther in the history in which it
+     can be laid.
+
+A much more comprehensive work is done in [2].
+
+[1] https://github.com/tummychow/git-absorb
+[2] https://github.com/aspiers/git-deps
+
+"""
+
+
+import sys
+import os
+import tempfile
+import re
+from optparse import OptionParser
+import itertools
+import tempfile
+
+def system(cmd):
+    return os.system(cmd)
+
+class Abort(Exception): pass
+
+def abort(msg):
+    print(msg, file=sys.stderr)
+    sys.exit(-1)
+
+def try_rebase(base, lst):
+    tf = tempfile.NamedTemporaryFile()
+    tf.write("\n".join(lst).encode('utf-8'))
+    editor_cmd = f"{sys.argv[0]} from-rebase {tf.name}"
+    cmd = f"git -c core.editor='{editor_cmd}' rebase -i {base}"
+    return system(cmd)
+
+def rebase_abort():
+    r = system("git rebase --abort")
+    if r != 0:
+        raise Abort("git rebase --abort failed")
+
+def from_rebase(lst, rebase_script):
+    f = open(rebase_script, "w")
+    for githash in lst:
+        f.write(f"pick {githash}\n")
+    f.close()
+
+def main():
+    if sys.argv[1] == "from-rebase":
+        lst = open(sys.argv[2]).read().split('\n')
+        from_rebase(lst, sys.argv[3])
+        sys.exit(0)
+
+    parser = OptionParser()
+    parser.add_option("-b", "--base", dest="base")
+    parser.add_option("-s", "--sink-start", dest="sink")
+    (options, _args) = parser.parse_args()
+
+    if not options.base and not options.sink:
+        abort("missing parameters")
+
+    patchset = []
+    for githash in os.popen(f"git log --pretty='%H' --reverse {options.sink}.."):
+        patchset.append(githash.strip())
+
+    revlist = []
+    for githash in os.popen(f"git log --pretty='%H' --reverse {options.base}..{options.sink}"):
+        revlist.append(githash.strip())
+
+    if len(patchset) >= 10:
+        abort(f"too many patches {len(patchset)}")
+
+    print("Checking a reversed list of {len(patchset)} patches")
+    patchset.reverse()
+    res = try_rebase(options.base, revlist + patchset)
+    if res != 0:
+        sys.exit(-1)
+
+    for patch_idx, patch in enumerate(patchset):
+        print(f"Trying to fit {patch} into history [{patch_idx + 1}/{len(patchset)}]")
+        start = 0
+        end = len(revlist)
+
+        best_save = None
+        best_save_reflist = None
+
+        while start <= end:
+            middle = int((start + end) / 2)
+            print(f"  At {middle} for [{start}, {end}]")
+            try_revlist = revlist[:middle] + [patch] + revlist[middle:]
+            prev_version = os.popen("git rev-parse HEAD").read().strip()
+            res = try_rebase(options.base, try_revlist)
+            if res != 0:
+                start = middle + 1
+                rebase_abort()
+            else:
+                best_save = os.popen("git rev-parse HEAD").read().strip()
+                best_save_reflist = try_revlist
+                if end == start:
+                    break
+                end = middle - 1
+                os.system(f"git reset --hard {prev_version}")
+
+        if best_save is not None:
+            os.system(f"git reset --hard {best_save}")
+            revlist = best_save_reflist
+
+        print("Done")
+
+if __name__ == "__main__":
+    main()
