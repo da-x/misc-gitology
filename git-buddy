@@ -36,6 +36,10 @@ def cmd_set(remote_name):
     e_system(f"git config buddy.other {remote_name}")
 
 def cmd_sync(*args):
+    parser = OptionParser()
+    parser.add_option("-f", "--force", dest="force", action="store_true")
+    (options, _args) = parser.parse_args(list(args))
+
     other = get_other()
 
     e_system(f'git fetch -p {other}')
@@ -80,8 +84,8 @@ def cmd_sync(*args):
                 if ret == 0:
                     update.append(("remote", "ff", item, remote_refs[item]))
                 else:
-                    remote_date = long(os.popen(f"git show {remote_refs[item]} --no-patch --pretty='%ct'").read().strip())
-                    local_date = long(os.popen(f"git show {local_refs[item]} --no-patch --pretty='%ct'").read().strip())
+                    remote_date = int(os.popen(f"git show {remote_refs[item]} --no-patch --pretty='%ct'").read().strip())
+                    local_date = int(os.popen(f"git show {local_refs[item]} --no-patch --pretty='%ct'").read().strip())
                     if remote_date > local_date:
                         update.append(("remote", "override", item, remote_refs[item]))
                     elif remote_date < local_date:
@@ -91,9 +95,13 @@ def cmd_sync(*args):
 
 
     fetch = f"git fetch {other}"
+    fetch_force = f"git fetch -f {other}"
     push = f"git push {other}"
+    push_force = f"git push -f {other}"
     fetches = 0
+    force_fetches = 0
     pushes = 0
+    force_pushes = 0
 
     for (direction, kind, item, ref) in update:
         if not direction:
@@ -107,8 +115,12 @@ def cmd_sync(*args):
         if kind == "override":
             if direction == "remote":
                 print(f"{item}: not fast-forward, remote is newer")
+                force_fetches += 1
+                fetch_force += f" {item}:{item}"
             elif direction == "local":
                 print(f"{item}: not fast-forward, local is newer")
+                force_pushes += 1
+                push_force += f" {item}:{item}"
             else:
                 print(f"{item}: not fast-forward, not sure what is newer")
 
@@ -118,6 +130,13 @@ def cmd_sync(*args):
     if pushes:
         print("Syncing remote")
         os.system(push)
+    if options.force:
+        if force_fetches:
+            print("Force syncing local")
+            os.system(fetch_force)
+        if force_pushes:
+            print("Force syncing remote")
+            os.system(push_force)
 
 def cmd_rm(args):
     other = get_other()
@@ -141,7 +160,7 @@ def main():
     if sys.argv[1] == "set":
         cmd_set(sys.argv[2])
     elif sys.argv[1] == "sync":
-        cmd_sync()
+        cmd_sync(*sys.argv[2:])
     elif sys.argv[1] == "rm":
         cmd_rm(sys.argv[2:])
     else:
