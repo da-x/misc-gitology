@@ -1,0 +1,31 @@
+#!/bin/bash
+
+#
+# Old `git clone` of repositories lying about with or without changes, take
+# up space. What if we can get rid of these clones without losing our work?
+#
+# This is a git 'unclone' in a sense that it also tries to preserve unpushed
+# revisions. So, it turns the local branches into patches, so that the clone
+# can be safely deleted. This does not take reflogs into account.
+#
+
+output=$1
+
+if [[ "$output" == "" ]] ; then
+    exit -1
+fi
+
+git branch -v > ${output}/local-branch-state
+git branch -rv > ${output}/remote-branch-state
+git remote -v > ${output}/remote-state
+
+for branch in $(git show-ref | grep ' refs/heads/' | cut -c53-) ; do
+    mkdir -p ${output}/${branch}
+    git format-patch $(for i in $(git show-ref | grep ' refs/remotes/' | cut -c41- | grep -v HEAD); do echo $i..${branch}; done) -o ${output}/heads/${branch}
+    rmdir ${output}/${branch} 2>/dev/null
+
+    if [[ -e ${output}/${branch} ]] ; then
+	echo ${branch}
+	ls -l ${output}/${branch}
+    fi
+done
