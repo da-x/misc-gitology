@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+
+"""
+Bidirectional sync of local branches with another repository.
+
+This looks whether each is fast forward of each other, and if not, does nothing.
+
+1) Useful when you have two dev environments that need syncing, and you don't want
+   to use rsync.
+2) Remote name to sync is configured as buddy.other.
+"""
+
+import sys
+import os
+import tempfile
+import re
+from optparse import OptionParser
+
+def system(cmd):
+    return os.system(cmd)
+
+class Abort(Exception): pass
+
+def get_other():
+    other = os.popen("git config buddy.other", "r").read().strip()
+    if other == "":
+        raise Abort("buddy not configured")
+    return other
+
+def e_system(cmd):
+    r = system(cmd)
+    if r != 0:
+        raise Abort(f"command {cmd} failed: {r}");
+
+def cmd_set(remote_name):
+    e_system(f"git config buddy.other {remote_name}")
+
+def cmd_sync(*args):
+    other = get_other()
+
+    e_system(f'git fetch -p {other}')
+
+    remote_refs = {}
+    local_refs = {}
+    remote_re = re.compile(f"^([^ ]+) refs/remotes/{other}/(.*)")
+    local_re = re.compile(f"([^ ]+) refs/heads/(.*)")
+
+    for ref in os.popen("git show-ref", "r"):
+        ref = ref.strip()
+        m = remote_re.search(ref)
+        if m:
+            (ref, name) = m.groups(0)
+            remote_refs[name] = ref
+
+        m = local_re.search(ref)
+        if m:
+            (ref, name) = m.groups(0)
+            local_refs[name] = ref
+
+    branches = list(set(remote_refs.keys()).union(set(local_refs.keys())))
+    branches.sort()
+
+    update = []
+
+    for item in branches:
+        if item in remote_refs and item not in local_refs:
+            update.append(("local", "new", item, remote_refs[item]))
+        elif item not in remote_refs and item in local_refs:
+            update.append(("remote", "new", item, local_refs[item]))
+        else:
+            if remote_refs[item] == local_refs[item]:
+                update.append((None, None, item, remote_refs[item]))
+                continue
+
+            ret = os.system(f"git merge-base --is-ancestor {local_refs[item]} {remote_refs[item]}")
+            if ret == 0:
+                update.append(("local", "ff", item, local_refs[item]))
+            else:
+                ret = os.system(f"git merge-base --is-ancestor {remote_refs[item]} {local_refs[item]}")
+                if ret == 0:
+                    update.append(("remote", "ff", item, remote_refs[item]))
+                else:
+                    remote_date = long(os.popen(f"git show {remote_refs[item]} --no-patch --pretty='%ct'").read().strip())
+                    local_date = long(os.popen(f"git show {local_refs[item]} --no-patch --pretty='%ct'").read().strip())
+                    if remote_date > local_date:
+                        update.append(("remote", "override", item, remote_refs[item]))
+                    elif remote_date < local_date:
+                        update.append(("local", "override", item, remote_refs[item]))
+                    else:
+                        update.append(("???", "override", item, remote_refs[item]))
+
+
+    fetch = f"git fetch {other}"
+    push = f"git push {other}"
+    fetches = 0
+    pushes = 0
+
+    for (direction, kind, item, ref) in update:
+        if not direction:
+            continue
+        if direction == "local" and kind in ["ff", "new"]:
+            fetches += 1
+            fetch += f" {item}:{item}"
+        if direction == "remote" and kind in ["ff", "new"]:
+            pushes += 1
+            push += f" {item}:{item}"
+        if kind == "override":
+            if direction == "remote":
+                print(f"{item}: not fast-forward, remote is newer")
+            elif direction == "local":
+                print(f"{item}: not fast-forward, local is newer")
+            else:
+                print(f"{item}: not fast-forward, not sure what is newer")
+
+    if fetches:
+        print("Syncing local")
+        os.system(fetch)
+    if pushes:
+        print("Syncing remote")
+        os.system(push)
+
+def cmd_rm(args):
+    other = get_other()
+    delete_remote = f"git push {other} --delete"
+    delete_local = f"git branch -D"
+
+    for branch in args:
+        delete_remote += f" {branch}"
+        delete_local += f" {branch}"
+
+    e_system(delete_remote)
+    e_system(delete_local)
+
+def main():
+    parser = OptionParser()
+    if len(sys.argv) == 1:
+        print("   set - set remote buddy name")
+        print("  sync - bidirectional sync on both ends")
+        print("    rm - remove branches on both ends")
+        return
+    if sys.argv[1] == "set":
+        cmd_set(sys.argv[2])
+    elif sys.argv[1] == "sync":
+        cmd_sync()
+    elif sys.argv[1] == "rm":
+        cmd_rm(sys.argv[2:])
+    else:
+        print(f"unknown command {sys.argv[1]}", file=sys.stderr)
+        sys.exit(-1)
+
+if __name__ == "__main__":
+    main()
