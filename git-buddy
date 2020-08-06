@@ -37,7 +37,13 @@ def cmd_set(remote_name):
 
 def cmd_sync(*args):
     parser = OptionParser()
+
+    # Take newer branch if exists in both ends
     parser.add_option("-f", "--force", dest="force", action="store_true")
+
+    # Delete remote branches that don't locally exist
+    parser.add_option("-o", "--out", dest="out", action="store_true")
+
     (options, _args) = parser.parse_args(list(args))
 
     other = get_other()
@@ -68,7 +74,10 @@ def cmd_sync(*args):
 
     for item in branches:
         if item in remote_refs and item not in local_refs:
-            update.append(("local", "new", item, remote_refs[item]))
+            if options.out:
+                update.append(("remote", "remove", item, remote_refs[item]))
+            else:
+                update.append(("local", "new", item, remote_refs[item]))
         elif item not in remote_refs and item in local_refs:
             update.append(("remote", "new", item, local_refs[item]))
         else:
@@ -109,9 +118,12 @@ def cmd_sync(*args):
         if direction == "local" and kind in ["ff", "new"]:
             fetches += 1
             fetch += f" {item}:{item}"
-        if direction == "remote" and kind in ["ff", "new"]:
+        if direction == "remote" and kind in ["ff", "new", "remove"]:
             pushes += 1
-            push += f" {item}:{item}"
+            if kind == "remove":
+                push += f" :{item}"
+            else:
+                push += f" {item}:{item}"
         if kind == "override":
             if direction == "remote":
                 print(f"{item}: not fast-forward, remote is newer")
@@ -155,7 +167,7 @@ def main():
     if len(sys.argv) == 1:
         print("   set - set remote buddy name")
         print("  sync - bidirectional sync on both ends")
-        print("    rm - remove branches on both ends")
+        print("    rm - remove given branches on both ends")
         return
     if sys.argv[1] == "set":
         cmd_set(sys.argv[2])
