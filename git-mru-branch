@@ -32,5 +32,11 @@ for i in head:
             lst.append(name)
             lst_set.add(name)
 
+existing_branches = list(existing_branches)
+existing_branches.sort()
+for branch in existing_branches:
+    if branch not in lst_set:
+        lst.append(branch)
+
 for branch in lst:
     print(branch)
