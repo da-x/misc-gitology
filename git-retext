@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+
+"""
+Like git-rebase interactive, but instead of editing a script, you edit the
+exported patches directly.
+"""
+
+import sys
+import os
+import tempfile
+import re
+from optparse import OptionParser
+
+def system(cmd):
+    return os.system(cmd)
+
+class Abort(Exception): pass
+
+def e_system(cmd):
+    r = system(cmd)
+    if r != 0:
+        raise Abort(f"command {cmd} failed: {r}");
+
+def main():
+    parser = OptionParser()
+
+    base = sys.argv[1]
+    e_system(f"git rev-parse {base} > /dev/null")
+    editor = os.popen("git config core.editor").read().strip()
+
+    filename = tempfile.mktemp("git-retext.diff")
+    pipe = os.popen(f"git format-patch --stdout {base}..", "r")
+    f = open(filename, "w")
+    f.write(pipe.read())
+    f.close()
+
+    r = os.system(f"{editor} {filename}")
+    try:
+        if r == 0:
+            e_system(f"git reset --hard {base}")
+            e_system(f"git am -3 < {filename}")
+    finally:
+        os.unlink(filename)
+
+if __name__ == "__main__":
+    main()
