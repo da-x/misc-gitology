@@ -21,6 +21,24 @@ def e_system(cmd):
     if r != 0:
         raise Abort(f"command {cmd} failed: {r}");
 
+C = re.compile("From ([a-f0-9]+) Mon Sep 17 00:00:00 2001")
+
+def to_commits(content):
+    commits = []
+    githash = None
+    lines = []
+    for line in content.splitlines():
+        match = C.match(line)
+        if match:
+            if lines:
+                commits.append((githash, lines))
+            lines = []
+            githash = match.groups(0)[0]
+        lines.append(line)
+    if lines:
+        commits.append((githash, lines))
+    return commits
+
 def main():
     parser = OptionParser()
 
@@ -28,19 +46,50 @@ def main():
     e_system(f"git rev-parse {base} > /dev/null")
     editor = os.popen("git config core.editor").read().strip()
 
+    orig_filename = tempfile.mktemp("git-retext-orig.diff")
     filename = tempfile.mktemp("git-retext.diff")
-    pipe = os.popen(f"git format-patch --stdout {base}..", "r")
-    f = open(filename, "w")
-    f.write(pipe.read())
-    f.close()
 
-    r = os.system(f"{editor} {filename}")
+    pipe = os.popen(f"git format-patch --stdout {base}..", "r")
+    before_edit = pipe.read()
+
+    fobj = open(filename, "w")
+    fobj.write(before_edit)
+    fobj.close()
+
+    rcode = os.system(f"{editor} {filename}")
     try:
-        if r == 0:
+        if rcode == 0:
+            after_edit = open(filename, "r").read()
+            before_edit = dict(to_commits(before_edit))
+            new_data = []
+            for (githash, lines) in to_commits(after_edit):
+                if githash in before_edit:
+                    fobj = open(orig_filename, "w")
+                    fobj.write('\n'.join(before_edit[githash]))
+                    fobj.close()
+                fobj = open(filename, "w")
+                fobj.write("\n".join(lines))
+                fobj.close()
+                if githash in before_edit:
+                    pipe = os.popen(f"rediff {orig_filename} {filename}")
+                    fixed = pipe.read()
+                    pipe.close()
+                else:
+                    pipe = os.popen(f"recountdiff {filename}")
+                    fixed = pipe.read()
+                    pipe.close()
+                new_data.append(fixed)
+
+            fobj = open(filename, "w")
+            for data in new_data:
+                fobj.write(data)
+            fobj.close()
+
             e_system(f"git reset --hard {base}")
             e_system(f"git am -3 < {filename}")
     finally:
         os.unlink(filename)
+        os.unlink(orig_filename)
 
 if __name__ == "__main__":
     main()
