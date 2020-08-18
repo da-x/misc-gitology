@@ -34,6 +34,7 @@ def e_system(cmd):
 
 def cmd_set(remote_name):
     e_system(f"git config buddy.other {remote_name}")
+    e_system(f"git config receive.denyCurrentBranch updateInstead")
 
 def cmd_sync(*args):
     parser = OptionParser()
