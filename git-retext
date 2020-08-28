@@ -39,17 +39,32 @@ def to_commits(content):
         commits.append((githash, lines))
     return commits
 
+def error_msg(msg):
+    print('\u001b[31m', end='', file=sys.stderr)
+    print(msg, file=sys.stderr)
+    print('\u001b[0m', end='', file=sys.stderr)
+    sys.stderr.flush()
+
 def main():
     parser = OptionParser()
 
     base = sys.argv[1]
+    ret = os.system("git status --porcelain")
+    if ret != 0:
+        print("There are uncommited changes", file=sys.stderr)
+        return
+
+    original = os.popen(f"git rev-parse HEAD").read().strip()
+    if original == "":
+        print("Unable to retrive original revision", file=sys.stderr)
+        return
+
     e_system(f"git rev-parse {base} > /dev/null")
     editor = os.popen("git config core.editor").read().strip()
 
-    orig_filename = tempfile.mktemp("git-retext-orig.diff")
     filename = tempfile.mktemp("git-retext.diff")
 
-    pipe = os.popen(f"git format-patch --stdout {base}..", "r")
+    pipe = os.popen(f"git format-patch --no-signature --stdout {base}..", "r")
     before_edit = pipe.read()
 
     fobj = open(filename, "w")
@@ -57,27 +72,28 @@ def main():
     fobj.close()
 
     rcode = os.system(f"{editor} {filename}")
+    success = False
     try:
         if rcode == 0:
             after_edit = open(filename, "r").read()
-            before_edit = dict(to_commits(before_edit))
             new_data = []
-            for (githash, lines) in to_commits(after_edit):
-                if githash in before_edit:
-                    fobj = open(orig_filename, "w")
-                    fobj.write('\n'.join(before_edit[githash]))
-                    fobj.close()
+            for (_, lines) in to_commits(after_edit):
                 fobj = open(filename, "w")
                 fobj.write("\n".join(lines))
                 fobj.close()
-                if githash in before_edit:
-                    pipe = os.popen(f"rediff {orig_filename} {filename}")
-                    fixed = pipe.read()
-                    pipe.close()
-                else:
-                    pipe = os.popen(f"recountdiff {filename}")
-                    fixed = pipe.read()
-                    pipe.close()
+                pipe = os.popen(f"recountdiff {filename}")
+                fixed = pipe.read() + "\n"
+                ret = pipe.close()
+                if ret:
+                    error_msg("recountdiff returned error")
+                #
+                # For debugging;
+                #
+                # fobj = open(filename + "-2", "w")
+                # fobj.write(fixed)
+                # fobj.close()
+                # os.system(f"diff -urN {filename} {filename}-2")
+
                 new_data.append(fixed)
 
             fobj = open(filename, "w")
@@ -86,10 +102,18 @@ def main():
             fobj.close()
 
             e_system(f"git reset --hard {base}")
-            e_system(f"git am -3 < {filename}")
+            e_system(f"git am < {filename}")
+            success = True
     finally:
         os.unlink(filename)
-        os.unlink(orig_filename)
+
+        if not success:
+            error_msg("Not successful, reverting to original")
+            sys.stderr.flush()
+
+            system(f"git am --abort")
+            e_system(f"git reset --hard {original}")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()
