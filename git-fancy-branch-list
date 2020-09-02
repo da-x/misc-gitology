@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 """
 
@@ -42,8 +42,8 @@ def pretty_date(diff):
     pretty string like 'an hour ago', 'Yesterday', '3 months ago',
     'just now', etc
     """
-    second_diff = long(diff)
-    day_diff = long(diff / 86400)
+    second_diff = int(diff)
+    day_diff = int(diff / 86400)
 
     if day_diff < 0:
         return ''
@@ -56,20 +56,20 @@ def pretty_date(diff):
         if second_diff < 120:
             return "a minute ago"
         if second_diff < 3600:
-            return str(second_diff / 60) + " minutes ago"
+            return str(int(second_diff / 60)) + " minutes ago"
         if second_diff < 7200:
             return "an hour ago"
         if second_diff < 86400:
-            return str(second_diff / 3600) + " hours ago"
+            return str(int((second_diff / 3600))) + " hours ago"
     if day_diff == 1:
         return "Yesterday"
     if day_diff < 7:
         return str(day_diff) + " days ago"
     if day_diff < 31:
-        return str(day_diff / 7) + " weeks ago"
+        return str(int(day_diff / 7)) + " weeks ago"
     if day_diff < 365:
-        return str(day_diff / 30) + " months ago"
-    return str(day_diff / 365) + " years ago"
+        return str(int(day_diff / 30)) + " months ago"
+    return str(int(day_diff / 365)) + " years ago"
 
 lst = []
 nb = 0
@@ -126,6 +126,6 @@ for (ts, b, h, s, place) in lst:
     age = (time.time() - time.mktime(ts_v.timetuple()))
     if age > 86400 * 31:
         back_color = backcolor24(40, 40, 40)
-    print ("%s %s  %-16s %s %s %s%-" + str(nb) + "s%s %s") % (
+    print(("%s %s  %-16s %s %s %s%-" + str(nb) + "s%s %s") % (
         back_color, parser.parse(ts), pretty_date(age), 
-        h, place, branch_color, b, colorreset(),  s)
+        h, place, branch_color, b, colorreset(),  s))
