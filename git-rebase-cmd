@@ -51,7 +51,8 @@ def try_rebase(base, command_line, options):
         tf.write((arg + "\n").encode('utf-8'))
         tf.flush()
     editor_cmd = f"{sys.argv[0]} from-rebase {tf.name}"
-    os.putenv(DRY_RUN, "1")
+    if options.dry_run:
+        os.putenv(DRY_RUN, "1")
     cmd = f"git -c advice.waitingforeditor=false -c core.editor='{editor_cmd}' rebase -i {base}"
     if options.onto:
         cmd += f" --onto {options.onto}"
@@ -74,6 +75,9 @@ def parse_commands(commands):
         if raw_cmds[0] == "drop":
             del raw_cmds[0]
             cmds.append(("drop", parse_int("drop", raw_cmds)))
+        if raw_cmds[0] == "fixup":
+            del raw_cmds[0]
+            cmds.append(("fixup", parse_int("fixup", raw_cmds)))
         elif raw_cmds[0] == "float":
             del raw_cmds[0]
             cmds.append(("float", parse_int("float", raw_cmds)))
@@ -113,6 +117,11 @@ def from_rebase(command_line, rebase_script):
             if line_nr >= 0 and line_nr < len(script):
                 x = len(script) - line_nr - 1
                 script[x] = 'drop ' + script[x].split(' ', 1)[1]
+        elif command[0] == "fixup":
+            line_nr = command[1]
+            if line_nr >= 0 and line_nr < len(script):
+                x = len(script) - line_nr - 1
+                script[x] = 'fixup ' + script[x].split(' ', 1)[1]
         elif command[0] == "swap":
             a_nr = command[1]
             b_nr = command[2]
