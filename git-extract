@@ -1,0 +1,46 @@
+#!/bin/bash
+
+#
+# Helper to extract features into small commits out of big single commits
+#
+# 1. Revert the feature manually from the big commit, add a 'Revert: ' prefix.
+# 2. Run the script. Result: the bit commit does not contain the feature, and
+#    the commit reverting it was replaced with a commit that adds it, with the
+#    'Revert: ' prefix removed.
+#
+# Optionally, run with '-r' so that the feature commit and big commits are swapped
+# in the history, with the feature being older. May require conflict resolutions.
+#
+
+if [[ $(git diff --exit-code) ]] ; then
+    echo "Unclean state"
+    exit 1
+fi
+if [[ $(git diff --cached --exit-code) ]] ; then
+    echo "Unclean state"
+    exit 1
+fi
+
+git show --pretty=%B --no-patch ${V} | head -n 1 | grep ^Revert:
+
+if [[ "$?" != "0" ]] ; then
+    echo "Top commit not starting with 'Revert: ' "
+    exit 1
+fi
+
+set -e
+
+V=$(git rev-parse HEAD)
+echo "Starting revision ${V}"
+tmpfile=$(mktemp /tmp/commitmsg.XXXXXX)
+git show --pretty=%B --no-patch ${V} | sed -E '1s/^Revert: //g' > ${tmpfile}
+git revert HEAD --no-edit
+git commit --amend -F ${tmpfile}
+rm -f ${tmpfile}
+git rebase-cmd HEAD~3 fixup 1
+
+if [[ "$1" == "-r" ]] ; then
+    # This may cause conflicts:
+
+    git rebase-cmd HEAD~2 flip
+fi
