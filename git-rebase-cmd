@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+
+"""
+
+The purpose of this script is to automate 'rebase interactive' when you already
+know what you want to do and can quickly specify it in the command line, for example 'float 2', or a sequence of commands, e.g:
+
+    git-rabase-cmd HEAD~3 drop 1 swap 0 2
+
+Here, the numbers given are from the end of the 'pick' list, where the last
+item is '0', the one before last is `1`, so forth, to match 'HEAD', 'HEAD~1',
+and 'HEAD~2', and so forth.
+
+    drop <nr>     Change the the n-th line from the last to 'drop'
+    sink <a> <b>  Swap between items 'a' and 'b'.
+    flip          Like 'swap 0 1', for when you want to swap the
+                  two most recent commits.
+    float <a>     Move commit 'a' to be last commit applied.
+    sink <a>      Move commit 'a' to be first commit applied.
+
+Other command line options:
+
+    -o/--onto     Relay that option to rebase
+    -n            Show the rebase script after the operations
+
+"""
+
+
+import sys
+import os
+import tempfile
+import re
+from optparse import OptionParser
+import itertools
+import tempfile
+
+def system(cmd):
+    return os.system(cmd)
+
+class Abort(Exception): pass
+
+def abort(msg):
+    print(msg, file=sys.stderr)
+    sys.exit(-1)
+
+DRY_RUN = "GIT_REBASE_CMD__OPTION_DRY_RUN"
+
+def try_rebase(base, command_line, options):
+    tf = tempfile.NamedTemporaryFile()
+    for arg in command_line:
+        tf.write((arg + "\n").encode('utf-8'))
+        tf.flush()
+    editor_cmd = f"{sys.argv[0]} from-rebase {tf.name}"
+    os.putenv(DRY_RUN, "1")
+    cmd = f"git -c advice.waitingforeditor=false -c core.editor='{editor_cmd}' rebase -i {base}"
+    if options.onto:
+        cmd += f" --onto {options.onto}"
+    if options.dry_run:
+        r = system(cmd + " 2>/dev/null")
+        sys.exit(0)
+        return
+
+    return system(cmd)
+
+def rebase_abort():
+    r = system("git rebase --abort")
+    if r != 0:
+        raise Abort("git rebase --abort failed")
+
+def parse_commands(commands):
+    raw_cmds = list(commands)
+    cmds = []
+    while len(raw_cmds) > 0:
+        if raw_cmds[0] == "drop":
+            del raw_cmds[0]
+            cmds.append(("drop", parse_int("drop", raw_cmds)))
+        elif raw_cmds[0] == "float":
+            del raw_cmds[0]
+            cmds.append(("float", parse_int("float", raw_cmds)))
+        elif raw_cmds[0] == "sink":
+            del raw_cmds[0]
+            cmds.append(("sink", parse_int("sink", raw_cmds)))
+        elif raw_cmds[0] == "swap":
+            del raw_cmds[0]
+            a = parse_int("swap", raw_cmds)
+            b = parse_int("swap", raw_cmds)
+            cmds.append(("swap", a, b))
+        elif raw_cmds[0] == "flip":
+            del raw_cmds[0]
+            cmds.append(("swap", 0, 1))
+        else:
+            abort(f"unknown command {raw_cmds[0]}")
+    return cmds
+
+def from_rebase(command_line, rebase_script):
+    f = open(rebase_script, "r")
+    script = f.read().splitlines()
+    f.close()
+
+    lines = []
+    for line in script:
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith('#'):
+            continue
+        lines.append(line)
+    script = lines
+
+    for command in parse_commands(command_line):
+        if command[0] == "drop":
+            line_nr = command[1]
+            if line_nr >= 0 and line_nr < len(script):
+                x = len(script) - line_nr - 1
+                script[x] = 'drop ' + script[x].split(' ', 1)[1]
+        elif command[0] == "swap":
+            a_nr = command[1]
+            b_nr = command[2]
+            if a_nr >= 0 and a_nr < len(script):
+                if b_nr >= 0 and b_nr < len(script):
+                    a = len(script) - a_nr - 1
+                    b = len(script) - b_nr - 1
+                    line = script[a]
+                    script[a] = script[b]
+                    script[b] = line
+        elif command[0] == "float":
+            line_nr = command[1]
+            if line_nr >= 0 and line_nr < len(script):
+                x = len(script) - line_nr - 1
+                save = script[x]
+                del script[x:x+1]
+                script.append(save)
+        elif command[0] == "sink":
+            line_nr = command[1]
+            if line_nr >= 0 and line_nr < len(script):
+                x = len(script) - line_nr - 1
+                save = script[-1]
+                del script[-1]
+                script = script[:x] + [save] + script[x:]
+
+    new_script = '\n'.join(script)
+    print(new_script)
+    f = open(rebase_script, "w")
+    f.write(new_script + "\n")
+    f.close()
+
+def parse_int(prefix, raw_cmds):
+    if len(raw_cmds) == 0:
+        abort(f"{prefix} needs a line number ([1-])")
+    try:
+        v = int(raw_cmds[0])
+    except ValueError:
+        abort(f"{prefix} needs an int")
+    del raw_cmds[0]
+    return v
+
+def main():
+    if sys.argv[1:] and sys.argv[1] == "from-rebase":
+        args = open(sys.argv[2]).read().split('\n')[:-1]
+        from_rebase(args, sys.argv[3])
+        if os.getenv(DRY_RUN) == "1":
+            sys.exit(-1)
+        sys.exit(0)
+
+    parser = OptionParser()
+    parser.add_option("--onto", "-o", dest="onto")
+    parser.add_option("--dry-run", "-n", dest="dry_run", action="store_true")
+
+    (options, args) = parser.parse_args()
+    if not args:
+        print("No arguments")
+        sys.exit(0)
+
+    target = args[0]
+    del args[0]
+
+    if not parse_commands(args):
+        abort("No commands given")
+
+    res = try_rebase(target, args, options)
+    if res != 0:
+        sys.exit(-1)
+
+if __name__ == "__main__":
+    main()
