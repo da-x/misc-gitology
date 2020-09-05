@@ -1,5 +1,11 @@
 #!/bin/bash
 
+#
+# Attempt to implement a 'rebase interactive' for stgit.
+#
+# See: https://stacked-git.github.io
+#
+
 TMPFILE=$(mktemp tmp.XXXXXXX.stg-rebase-i)
 EDITOR=$(git config core.editor)
 

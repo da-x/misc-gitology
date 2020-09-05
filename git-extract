@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #
-# Helper to extract features into small commits out of big single commits
+# Helper to extract features into small commits out of big single commits.
 #
 # 1. Revert the feature manually from the big commit, add a 'Revert: ' prefix.
-# 2. Run the script. Result: the bit commit does not contain the feature, and
+# 2. Run the script. Result: the big commit does not contain the feature, and
 #    the commit reverting it was replaced with a commit that adds it, with the
 #    'Revert: ' prefix removed.
 #

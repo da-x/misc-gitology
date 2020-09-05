@@ -127,5 +127,5 @@ for (ts, b, h, s, place) in lst:
     if age > 86400 * 31:
         back_color = backcolor24(40, 40, 40)
     print(("%s %s  %-16s %s %s %s%-" + str(nb) + "s%s %s") % (
-        back_color, parser.parse(ts), pretty_date(age), 
+        back_color, parser.parse(ts), pretty_date(age),
         h, place, branch_color, b, colorreset(),  s))

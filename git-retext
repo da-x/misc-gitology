@@ -2,7 +2,11 @@
 
 """
 Like git-rebase interactive, but instead of editing a script, you edit the
-exported patches directly.
+exported patches directly, which are presented in an email format.
+
+You can edit the diff directly.  For allowing this, this relies on
+`recountdiff` to fix diff hunk header numbers.  See `recountdiff` regarding the
+editing of diffs.
 """
 
 import sys

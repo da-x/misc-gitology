@@ -1,8 +1,10 @@
 #!/bin/bash
 
-# Undo a `git amend -a` using the get log. Note that it cannot detect
-# whether `git amend -a` was the last operation, so if that's not the
-# case it would behave unexpectedly.
+#
+# Undo a `git amend -a` using the git reflog. Note that it cannot detect
+# whether `git amend -a` was the last operation, so if that's not the case it
+# would behave unexpectedly.
+#
 
 set -e
 

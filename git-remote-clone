@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+#
+# Imprefect script to create a clone of the local repository on a remote server that
+# is accessible by ssh.
+#
+
 if [ "$#" -ne 1 ] ; then
     echo "Expected host:path" >&2
     exit -1

@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+#
+# Before there was `git config receive.denyCurrentBranch updateInstead`, I used this
+# to update working trees on a remote server.
+#
+# DEPENDENCIES: `git-bottle` (see repo).
+#
+
 if [ "$#" -eq 0 ] ; then
     echo "Expected host:path or remote-name" >&2
     exit -1

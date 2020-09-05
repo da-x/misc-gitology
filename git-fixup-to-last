@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #
-# Takes all existing modifications and fixups for each file,
-# the last commit that touched the file.
+# Takes all existing modifications and fixups for each file, according the last
+# commit that touched the file.
 #
 # Syntax:
 #

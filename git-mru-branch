@@ -7,11 +7,7 @@ import re
 # Here, the recently checked out branches from the reflog are
 # presented sorted according to the most recently checked out branch.
 #
-# Can be used with `pick`:
-#
-#     https://github.com/calleerlandsson/pick
-#
-# Git 'git co -' on steroids.
+# Can be used with `pick` (https://github.com/calleerlandsson/pick) or fzf.
 #
 
 m = re.compile(r"([0-9]+[ \t]+[+-/]?[0-9]+)[ \t]+checkout: moving from ([.A-Za-z0-9_/-]+) to ([.A-Za-z0-9_/-]+)")

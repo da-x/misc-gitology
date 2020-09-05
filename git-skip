@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
+#
 # Skip a patch in a rebase or am, depending on the situation.
+#
+
 set -e
 
 git_dir="$(git rev-parse --git-dir)"

@@ -3,7 +3,8 @@
 """
 
 The purpose of this script is to automate 'rebase interactive' when you already
-know what you want to do and can quickly specify it in the command line, for example 'float 2', or a sequence of commands, e.g:
+know what you want to do and can quickly specify it in the command line, for
+example 'float 2', or a sequence of commands, e.g:
 
     git-rabase-cmd HEAD~3 drop 1 swap 0 2
 
@@ -11,7 +12,7 @@ Here, the numbers given are from the end of the 'pick' list, where the last
 item is '0', the one before last is `1`, so forth, to match 'HEAD', 'HEAD~1',
 and 'HEAD~2', and so forth.
 
-    drop <nr>     Change the the n-th line from the last to 'drop'
+    drop <nr>     Change the item `nr` to 'drop'
     sink <a> <b>  Swap between items 'a' and 'b'.
     flip          Like 'swap 0 1', for when you want to swap the
                   two most recent commits.
@@ -20,8 +21,9 @@ and 'HEAD~2', and so forth.
 
 Other command line options:
 
-    -o/--onto     Relay that option to rebase
-    -n            Show the rebase script after the operations
+    -o/--onto <base>   Relay that option to rebase
+    -n                 Dry-run - show the rebase script would like like after the
+                       operations.
 
 """
 

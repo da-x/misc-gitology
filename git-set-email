@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
+#
 # Set my per-repository credentials using dirlocalenv.
+#
+# See: https://github.com/da-x/dirlocalenv
+#
 
 set -e
 
