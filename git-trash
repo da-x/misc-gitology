@@ -2,16 +2,18 @@
 
 """
 
-A tool to hide/unhide branche by moving them to non-branches refs, following suggestion
-from the following stack overflow question:
+A tool to hide/unhide local branches by moving them to non-branches refs,
+following suggestion from the following stack overflow question:
 
    https://stackoverflow.com/questions/25169440/remove-hide-git-branches-without-deleting-commit-histories
+
+The trashed local branches are accessible via: `refs/trash/<branch-name>`.
 
 The commands are:
 
     list                  List all trashed branches
-    throw <branches>      Throw the branches to trash
-    restore <branches>    Take the given branches out of trash
+    throw <branches>      Throw the given branches to the trash
+    restore <branches>    Restore the given branches out of the trash
 
 """
 
