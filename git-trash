@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+
+"""
+
+A tool to hide/unhide branche by moving them to non-branches refs, following suggestion
+from the following stack overflow question:
+
+   https://stackoverflow.com/questions/25169440/remove-hide-git-branches-without-deleting-commit-histories
+
+The commands are:
+
+    list                  List all trashed branches
+    throw <branches>      Throw the branches to trash
+    restore <branches>    Take the given branches out of trash
+
+"""
+
+import sys
+import os
+import re
+
+def system(cmd):
+    print(cmd)
+    return os.system(cmd)
+
+class Abort(Exception): pass
+
+def abort(msg):
+    print(msg, file=sys.stderr)
+    sys.exit(-1)
+
+RE = re.compile("^([^ ]+) refs/([^/]*)/(.*)$")
+
+def get_refs():
+    for line in os.popen("git show-ref"):
+        m = RE.match(line)
+        if not m:
+            continue
+        yield m.groups(0)
+
+def cmd_list():
+    for _, kind, name in list(get_refs()):
+        if kind == "trash":
+            print(name)
+
+def cmd_throw(branches):
+    heads = set()
+    trash = set()
+    refs = list(get_refs())
+
+    for _, kind, name in refs:
+        if kind == "heads":
+            heads.add(name)
+        if kind == "trash":
+            trash.add(name)
+
+    branches = set(branches)
+    not_found = branches.difference(heads)
+    if not_found:
+        print(f"Branches not found: {not_found}")
+        sys.exit(1)
+    already_trashed = branches.intersection(trash)
+    if already_trashed:
+        print(f"Already trashed: {already_trashed}")
+        sys.exit(1)
+
+    for dhash, kind, name in refs:
+        if kind == "heads" and name in branches:
+            system(f"git update-ref refs/trash/{name} {dhash}")
+            system(f"git update-ref -d refs/heads/{name}")
+
+def cmd_restore(branches):
+    heads = set()
+    trash = set()
+    refs = list(get_refs())
+
+    for _, kind, name in refs:
+        if kind == "heads":
+            heads.add(name)
+        if kind == "trash":
+            trash.add(name)
+
+    branches = set(branches)
+    not_found = branches.difference(trash)
+    if not_found:
+        print(f"Trash not found: {not_found}")
+        sys.exit(1)
+    already_restored = branches.intersection(heads)
+    if already_restored:
+        print(f"Branches already exist: {already_restored}")
+        sys.exit(1)
+
+    for dhash, kind, name in refs:
+        if kind == "trash" and name in branches:
+            system(f"git update-ref refs/heads/{name} {dhash}")
+            system(f"git update-ref -d refs/trash/{name}")
+
+def main():
+    if not sys.argv[1:]:
+        print("No command given. Use list/throw/restore")
+        return
+    if sys.argv[1] == "list":
+        cmd_list()
+    elif sys.argv[1] == "throw":
+        cmd_throw(sys.argv[2:])
+    elif sys.argv[1] == "restore":
+        cmd_restore(sys.argv[2:])
+    else:
+        print("unknown command")
+
+if __name__ == "__main__":
+    main()
