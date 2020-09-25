@@ -1,0 +1,16 @@
+#!/bin/bash
+
+set -e
+set -u
+
+hunk_index=$(echo $2 | awk -F' ' '{print $1}')
+filename_line=$(echo $2 | awk -F' ' '{print $2}')
+filename=$(echo $filename_line | awk -F':' '{print $1}')
+
+if [[ "$1" != "" ]] ; then
+    CMD="git diff $1"
+else
+    CMD="git diff"
+fi
+
+$CMD | filterdiff -i 'a/'${filename} -i 'b/'${filename} --hunks ${hunk_index} | tail -n +5 | delta-configured

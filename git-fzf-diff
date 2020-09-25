@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+
+"""
+Show hunks in FZF multi-select or single-select and do stuff with these hunks.
+
+Actions:
+
+    -a Add the selected hunks. This serves as a better 'git add -p'.
+    -c Also commit the changes with '-a'.
+
+"""
+
+import sys
+import os
+import tempfile
+import re
+from optparse import OptionParser
+import itertools
+import tempfile
+import shlex
+import subprocess
+
+def system(cmd):
+    return os.system(cmd)
+
+class Abort(Exception): pass
+
+def abort(msg):
+    print(msg, file=sys.stderr)
+    sys.exit(-1)
+
+DIFF_LINE = re.compile(r"^diff --git a/(.*) b/(.*)$")
+HUNK_HEADER = re.compile(r"^@@ -[^ ]+ [+]([0-9]+)[ ,][^@]*@@(.*)$")
+OUTPUT = re.compile(r"^ *([^:]+) +([^:]+):([0-9]+)")
+
+def add(selected_hunks, nr_hunks, commit):
+    cmd = ["git", "-c", "interactive.diffFilter=cat", "add", "-p"]
+    process = subprocess.Popen(cmd,
+                               stdin=subprocess.PIPE)
+    selected_hunks = set(selected_hunks)
+    for idx in range(0, nr_hunks):
+        if idx in selected_hunks:
+            process.stdin.write(f"y\n".encode('utf-8'))
+        else:
+            process.stdin.write(f"n\n".encode('utf-8'))
+    process.stdin.close()
+    r = process.wait()
+    if r != 0:
+        abort("Error adding hunks")
+        return
+    if commit:
+        os.system("git commit")
+
+def main():
+    parser = OptionParser()
+    parser.add_option("-a", "--add", dest="add", action="store_true")
+    parser.add_option("-c", "--commit", dest="commit", action="store_true")
+
+    (options, args) = parser.parse_args()
+    if options.add:
+        args = ""
+    else:
+        print("Nothing to do")
+        sys.exit(0)
+
+    filename_color = "\x1b[38;2;155;255;155m"
+    white = "\x1b[38;2;255;255;255m"
+    lnum_color = "\x1b[38;2;77;127;77m"
+    grey = "\x1b[38;2;255;255;155m"
+    args = ' '.join(args)
+
+    filename = ''
+    hunknum = 1
+    hunkindex = 0
+    hunks = {}
+    matches = []
+
+    for line in os.popen(f"git diff {args} | grep -E '^(diff|@@)'").readlines():
+        m = DIFF_LINE.match(line)
+        if m:
+            filename = m.groups(0)[1]
+            hunknum = 1
+            continue
+        m = HUNK_HEADER.match(line)
+        if m:
+            hunks[(filename, hunknum)] = hunkindex
+            line_num = int(m.groups(0)[0])
+            title = m.groups(0)[1]
+            matches.append("%3d %s%s%s:%s%d%s%s" % (
+                hunknum, filename_color, filename,
+                white, lnum_color, line_num, white, title))
+            hunkindex += 1
+            hunknum += 1
+            continue
+
+    fzf_git_diff_hunk_program = \
+        os.path.join(os.path.dirname(sys.argv[0]), "fzf-git-diff-hunk-preview")
+    preview_program = fzf_git_diff_hunk_program + f" '{args}' {{}}"
+
+    fzf_options = [
+        "--ansi", "-e", "--no-sort", "--tac", "-m",
+        "--preview-window", "down:70%:noborder",
+        "--preview", preview_program,
+    ]
+    process = subprocess.Popen(["fzf"] + fzf_options,
+                               stdin=subprocess.PIPE,
+                               stdout=subprocess.PIPE)
+    for match in matches:
+        process.stdin.write(f"{match}\n".encode('utf-8'))
+    process.stdin.close()
+    res = process.wait()
+    if res != 0:
+        sys.exit(-1)
+        return
+
+    selected_hunks = []
+    for line in process.stdout.readlines():
+        m = OUTPUT.match(line.decode('utf-8'))
+        if m:
+            (hunknum, filename, line) = m.groups()
+            hunknum = int(hunknum)
+            line = int(line)
+            selected_hunks.append(hunks[(filename, hunknum)])
+
+    if options.add:
+        add(selected_hunks, len(matches), options.commit)
+
+if __name__ == "__main__":
+    main()
+
