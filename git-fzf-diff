@@ -35,6 +35,7 @@ def abort(msg):
 DIFF_LINE = re.compile(r"^diff --git a/(.*) b/(.*)$")
 HUNK_HEADER = re.compile(r"^@@ -[^ ]+ [+]([0-9]+)[ ,][^@]*@@(.*)$")
 OUTPUT = re.compile(r"^ *([^:]+) +([^:]+):([0-9]+)")
+FZFLINE = re.compile(r"^ *([0-9])+ +([^:]+):([0-9]+)")
 
 def add(selected_hunks, nr_hunks, commit):
     cmd = ["git", "-c", "interactive.diffFilter=cat", "add", "-p"]
@@ -55,6 +56,19 @@ def add(selected_hunks, nr_hunks, commit):
         os.system("git commit")
 
 def main():
+    if sys.argv[1:2] == ["--preview"]:
+        m = FZFLINE.match(sys.argv[3])
+        if not m:
+            return
+
+        (hunk_index, filename, line) = m.groups(0)
+        cmd="git diff"
+        if sys.argv[2]:
+            cmd += " " + sys.argv[2]
+
+        cmd = f"{cmd} | filterdiff -i 'a/'{filename} -i 'b/'{filename} --hunks {hunk_index} | tail -n +5 | delta-configured"
+        sys.exit(os.system(cmd))
+        return
     parser = OptionParser()
     parser.add_option("-a", "--add", dest="add", action="store_true")
     parser.add_option("-c", "--commit", dest="commit", action="store_true")
@@ -102,9 +116,8 @@ def main():
         elif line.startswith(' '):
             contextlines += 1
 
-    fzf_git_diff_hunk_program = \
-        os.path.join(os.path.dirname(sys.argv[0]), "fzf-git-diff-hunk-preview")
-    preview_program = fzf_git_diff_hunk_program + f" '{args}' {{}}"
+    fzf_git_diff_hunk_program = sys.argv[0]
+    preview_program = fzf_git_diff_hunk_program + f" --preview '{args}' {{}}"
 
     fzf_options = [
         "--ansi", "-e", "--no-sort", "--tac", "-m",
