@@ -3,12 +3,23 @@
 """
 Show hunks in FZF multi-select or single-select and do stuff with these hunks.
 
-By default, an editor will be open on the selected hunk.
+The output of `git diff <stuff>` is processed through this command, then it
+lets you do FZF things with these hunks.
 
-Actions:
+FZF Actions:
 
-    -a Add the selected hunks. This serves as a better 'git add -p'.
-    -c Also commit the changes, when '-a' is used.
+    Alt-A    do 'git add -p' on the selected hunks and refresh. Works well if
+             for the output of `git diff`. Works regardless of '-a' command line
+             option.
+
+    Return   Unless '-a' is specified, open an editor on a hunk if we selected
+             a single one. Otherwise, for '-a', do 'git add -p' on the selected
+             hunks and return. If '-c' is specified, also do a 'git commit'.
+
+Command line options:
+
+    -a      Add selected hunks on 'Return'.
+    -c      Also commit the changes, when '-a' is used.
 
 """
 
