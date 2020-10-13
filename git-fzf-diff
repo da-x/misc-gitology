@@ -34,12 +34,12 @@ def abort(msg):
 
 DIFF_LINE = re.compile(r"^diff --git a/(.*) b/(.*)$")
 HUNK_HEADER = re.compile(r"^@@ -[^ ]+ [+]([0-9]+)[ ,][^@]*@@(.*)$")
-OUTPUT = re.compile(r"^ *([^:]+) +([^:]+):([0-9]+)")
-FZFLINE = re.compile(r"^ *([0-9])+ +([^:]+):([0-9]+)")
+OUTPUT = re.compile(r"^ *([0-9])+ +([^:]+):([0-9]+)")
 
 def add(selected_hunks, nr_hunks, commit):
     cmd = ["git", "-c", "interactive.diffFilter=cat", "add", "-p"]
     process = subprocess.Popen(cmd,
+                               stdout=subprocess.DEVNULL,
                                stdin=subprocess.PIPE)
     selected_hunks = set(selected_hunks)
     for idx in range(0, nr_hunks):
@@ -55,28 +55,18 @@ def add(selected_hunks, nr_hunks, commit):
     if commit:
         os.system("git commit")
 
-def main():
-    if sys.argv[1:2] == ["--preview"]:
-        m = FZFLINE.match(sys.argv[3])
-        if not m:
-            return
+def get_selected_lines(hunks, output_lines):
+    selected_hunks = []
+    for line in output_lines:
+        m = OUTPUT.match(line.decode('utf-8'))
+        if m:
+            (hunknum, filename, line) = m.groups()
+            hunknum = int(hunknum)
+            line = int(line)
+            selected_hunks.append(hunks[(filename, hunknum)])
+    return selected_hunks
 
-        (hunk_index, filename, line) = m.groups(0)
-        cmd="git diff"
-        if sys.argv[2]:
-            cmd += " " + sys.argv[2]
-
-        cmd = f"{cmd} | filterdiff -i 'a/'{filename} -i 'b/'{filename} --hunks {hunk_index} | tail -n +5 | delta-configured"
-        sys.exit(os.system(cmd))
-        return
-    parser = OptionParser()
-    parser.add_option("-a", "--add", dest="add", action="store_true")
-    parser.add_option("-c", "--commit", dest="commit", action="store_true")
-
-    (options, args) = parser.parse_args()
-    if options.add:
-        args = ""
-
+def get_hunks(args):
     filename_color = "\x1b[38;2;155;255;155m"
     white = "\x1b[38;2;255;255;255m"
     lnum_color = "\x1b[38;2;77;127;77m"
@@ -115,37 +105,86 @@ def main():
                     idx_hunks[-1].append(contextlines)
         elif line.startswith(' '):
             contextlines += 1
+    return (hunks, matches, idx_hunks)
 
-    fzf_git_diff_hunk_program = sys.argv[0]
-    preview_program = fzf_git_diff_hunk_program + f" --preview '{args}' {{}}"
+def main():
+    if sys.argv[1:2] == ["--binding-preview"]:
+        m = OUTPUT.match(sys.argv[3])
+        if not m:
+            return
 
-    fzf_options = [
-        "--ansi", "-e", "--no-sort", "--tac", "-m",
-        "--preview-window", "down:70%:noborder",
-        "--preview", preview_program,
-    ]
-    process = subprocess.Popen(["fzf"] + fzf_options,
-                               stdin=subprocess.PIPE,
-                               stdout=subprocess.PIPE)
-    for match in matches:
-        process.stdin.write(f"{match}\n".encode('utf-8'))
-    process.stdin.close()
-    res = process.wait()
-    if res != 0:
-        sys.exit(-1)
+        (hunk_index, filename, line) = m.groups(0)
+        cmd="git diff"
+        if sys.argv[2]:
+            cmd += " " + sys.argv[2]
+
+        cmd = f"{cmd} | filterdiff -i 'a/'{filename} -i 'b/'{filename} --hunks {hunk_index} | tail -n +5 | delta-configured"
+        sys.exit(os.system(cmd))
         return
+    elif sys.argv[1:2] == ["--binding-add"]:
+        args = [sys.argv[2]]
+        output_lines = [o.encode('utf-8') for o in sys.argv[3:]]
+        reload_command = True
+        add_mode = True
+        commit_mode = False
+    else:
+        parser = OptionParser()
+        parser.add_option("-a", "--add", dest="add", action="store_true")
+        parser.add_option("-c", "--commit", dest="commit", action="store_true")
 
-    selected_hunks = []
-    for line in process.stdout.readlines():
-        m = OUTPUT.match(line.decode('utf-8'))
-        if m:
-            (hunknum, filename, line) = m.groups()
-            hunknum = int(hunknum)
-            line = int(line)
-            selected_hunks.append(hunks[(filename, hunknum)])
+        (options, args) = parser.parse_args()
+        reload_command = False
+        binding_add_mode = False
+        add_mode = False
+        if options.add:
+            args = ""
+            add_mode = True
+        if options.commit:
+            commit_mode = True
+        else:
+            commit_mode = False
 
-    if options.add:
-        add(selected_hunks, len(matches), options.commit)
+    (hunks, matches, idx_hunks) = get_hunks(args)
+
+    if reload_command:
+        if add_mode:
+            # try:
+            selected_hunks = get_selected_lines(hunks, output_lines)
+            # except:
+            #     from traceback import print_exc
+            #     print_exc(file=sys.stdout)
+            add(selected_hunks, len(matches), commit_mode)
+        (hunks, matches, idx_hunks) = get_hunks(args)
+        for match in matches:
+            sys.stdout.buffer.write(f"{match}\n".encode('utf-8'))
+        return
+    else:
+        args = ' '.join(args)
+        our_program = sys.argv[0]
+        preview_program = our_program + f" --binding-preview '{args}' {{}}"
+        add_program = our_program + f" --binding-add '{args}' {{+}}"
+
+        fzf_options = [
+            "--ansi", "-e", "--no-sort", "--tac", "-m",
+            "--preview-window", "down:70%:noborder",
+            "--preview", preview_program,
+            "--bind", "alt-a:reload(" + add_program + ")"
+        ]
+        process = subprocess.Popen(["fzf"] + fzf_options,
+                                stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE)
+        for match in matches:
+            process.stdin.write(f"{match}\n".encode('utf-8'))
+        process.stdin.close()
+        res = process.wait()
+        if res != 0:
+            sys.exit(-1)
+            return
+        output_lines = process.stdout.readlines()
+
+    selected_hunks = get_selected_lines(hunks, output_lines)
+    if add_mode:
+        add(selected_hunks, len(matches), commit_mode)
         return
 
     if len(selected_hunks) == 1:
