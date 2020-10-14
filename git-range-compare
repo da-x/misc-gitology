@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+
+"""
+Compare two ranges. Somewhat more readable than git-range-diff.
+"""
+
+import sys
+import os
+import tempfile
+import re
+from optparse import OptionParser
+
+def system(cmd):
+    return os.system(cmd)
+
+class Abort(Exception): pass
+
+class RefTrack(object):
+    def __init__(self):
+        pass
+
+    def get_base(self, branch, suggested_base):
+        base = suggested_base
+        if not base:
+            base = f"{branch}.base"
+            base_state = os.popen(f"git show-ref {base}").read().strip()
+            if base_state == "":
+                print(f"Did not find a default 'base' branch {base}", file=sys.stderr)
+                raise Abort()
+        else:
+            base_state = os.popen(f"git show-ref {base}").read().strip()
+            if base_state == "":
+                print(f"Base {base} is invalid", file=sys.stderr)
+                raise Abort()
+
+        githash = base_state.split(' ', 1)[0]
+        # It may be a git tag, we need a commit hash:
+        base = os.popen(f"git rev-list -n 1 {githash}").read().strip()
+        return (base, base_state)
+
+    def get_commits(self, a):
+        commits = []
+        b = self.get_base(a, None)[0]
+        for line in os.popen(f"git log --oneline {b}..{a} --pretty='%H: [%ci] %s' --no-decorate").readlines():
+            (h, message) = line.split(': ', 1)
+            commits.append((h, message))
+        return commits
+
+def diff_ranges(rt, source, dest):
+    a = rt.get_commits(source)
+    b = rt.get_commits(dest)
+
+    outputs = []
+    for z in [a, b]:
+        tf = tempfile.NamedTemporaryFile()
+        for commit in z:
+            cmd = f"git show {commit[0]} | git patch-id --stable"
+            rsp = os.popen(cmd).read().strip()
+            if rsp != "":
+                (patch_id, commit_id) = rsp.split(' ')
+            else:
+                (patch_id, commit_id) = ("____epmty___", commit[0])
+            tf.write((patch_id + "\n").encode('utf-8'))
+        tf.flush()
+        outputs.append(tf)
+
+    first_idx = 0
+    second_idx = 0
+    for line in os.popen(f"diff -U 10000 -durN {outputs[0].name} {outputs[1].name}").readlines()[3:]:
+        f_id = ("%s:%d" % (source, first_idx))
+        s_id = ("%s:%d" % (dest, second_idx))
+        if line.startswith(' '):
+            patch_id = line.strip()
+            print(' ', 'Id:' + patch_id[:12], "      ", a[first_idx][0][:12], a[first_idx][1].strip())
+            first_idx += 1
+            second_idx += 1
+        elif line.startswith('+'):
+            patch_id = line.strip()[1:]
+            print('\u001b[32m', end='')
+            print('+', 'Id:' +patch_id[:12], ("%6s" % s_id), b[second_idx][0][:12], b[second_idx][1].strip())
+            print('\u001b[0m', end='')
+            second_idx += 1
+        elif line.startswith('-'):
+            patch_id = line.strip()[1:]
+            print('\u001b[31m', end='')
+            print('-', 'Id:' +patch_id[:12], ("%6s" % f_id), a[first_idx][0][:12], a[first_idx][1].strip())
+            print('\u001b[0m', end='')
+            first_idx += 1
+
+def diff(*args):
+    parser = OptionParser()
+    rt = RefTrack()
+
+    source = args[0]
+    dest = args[1]
+    if not (':' in source and ":" in dest):
+        return diff_ranges(rt, source, dest)
+
+    (source, source_p) = source.split(':', 1)
+    (dest, dest_p) = dest.split(':', 1)
+    a = rt.get_commits(source)
+    b = rt.get_commits(dest)
+    source_commit = a[int(source_p)][0]
+    dest_commit = b[int(dest_p)][0]
+    tf1 = tempfile.NamedTemporaryFile()
+    tf1.write(os.popen(f"git show {source_commit} --no-decorate").read().encode('utf-8'))
+    tf1.flush()
+    tf2 = tempfile.NamedTemporaryFile()
+    tf2.write(os.popen(f"git show {dest_commit} --no-decorate").read().encode('utf-8'))
+    tf2.flush()
+    print(os.popen(f"diff -urN {tf1.name} {tf2.name} | delta-configured").read())
+
+def main():
+    parser = OptionParser()
+    diff(sys.argv[1], sys.argv[2])
+
+if __name__ == "__main__":
+    main()

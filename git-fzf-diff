@@ -179,7 +179,7 @@ def main():
             "--ansi", "-e", "--no-sort", "--tac", "-m",
             "--preview-window", "down:70%:noborder",
             "--preview", preview_program,
-            "--bind", "alt-a:reload(" + add_program + ")"
+            "--bind", "alt-a:reload(" + add_program + ")",
         ]
         process = subprocess.Popen(["fzf"] + fzf_options,
                                 stdin=subprocess.PIPE,
