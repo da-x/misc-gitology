@@ -22,11 +22,15 @@ class RefTrack(object):
     def get_base(self, branch, suggested_base):
         base = suggested_base
         if not base:
+            # "Try .base suffix"
             base = f"{branch}.base"
-            base_state = os.popen(f"git show-ref {base}").read().strip()
+            base_state = os.popen(f"git show-ref {base} 2>/dev/null").read().strip()
             if base_state == "":
-                print(f"Did not find a default 'base' branch {base}", file=sys.stderr)
-                raise Abort()
+                # Try most recent tag
+                base_state = os.popen(f"git describe --abbrev=0 {branch}").read().strip()
+                if base_state == "":
+                    print(f"Did not find a default 'base' branch {base}", file=sys.stderr)
+                    raise Abort()
         else:
             base_state = os.popen(f"git show-ref {base}").read().strip()
             if base_state == "":
