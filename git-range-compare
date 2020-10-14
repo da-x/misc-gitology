@@ -70,7 +70,20 @@ def diff_ranges(rt, source, dest):
 
     first_idx = 0
     second_idx = 0
-    for line in os.popen(f"diff -U 10000 -durN {outputs[0].name} {outputs[1].name}").readlines()[3:]:
+    diff = os.popen(f"diff -U 10000 -durN {outputs[0].name} {outputs[1].name}").readlines()[3:]
+    patch_id_counts = {}
+    for line in diff:
+        patch_id = None
+        if line.startswith(' '):
+            patch_id = line.strip()
+        elif line.startswith('+'):
+            patch_id = line.strip()[1:]
+        elif line.startswith('-'):
+            patch_id = line.strip()[1:]
+        if patch_id:
+            patch_id_counts[patch_id] = 1 + patch_id_counts.get(patch_id, 0)
+
+    for line in diff:
         f_id = ("%s:%d" % (source, first_idx))
         s_id = ("%s:%d" % (dest, second_idx))
         if line.startswith(' '):
@@ -80,13 +93,19 @@ def diff_ranges(rt, source, dest):
             second_idx += 1
         elif line.startswith('+'):
             patch_id = line.strip()[1:]
-            print('\u001b[32m', end='')
+            if patch_id_counts[patch_id] >= 2:
+                print('\u001b[38;2;0;90;0m', end='')
+            else:
+                print('\u001b[32m', end='')
             print('+', 'Id:' +patch_id[:12], ("%6s" % s_id), b[second_idx][0][:12], b[second_idx][1].strip())
             print('\u001b[0m', end='')
             second_idx += 1
         elif line.startswith('-'):
             patch_id = line.strip()[1:]
-            print('\u001b[31m', end='')
+            if patch_id_counts[patch_id] >= 2:
+                print('\u001b[38;2;90;0;0m', end='')
+            else:
+                print('\u001b[31m', end='')
             print('-', 'Id:' +patch_id[:12], ("%6s" % f_id), a[first_idx][0][:12], a[first_idx][1].strip())
             print('\u001b[0m', end='')
             first_idx += 1
