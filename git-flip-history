@@ -1,0 +1,88 @@
+#!/bin/bash
+
+set -euo pipefail
+
+if [[ $(git diff --exit-code) ]] ; then
+    echo "Unclean state"
+    exit 1
+fi
+if [[ $(git diff --cached --exit-code) ]] ; then
+    echo "Unclean state"
+    exit 1
+fi
+
+# Gather versions with 'Revert: ', until bumping into a commit that does not have 'Revert: '.
+
+versions=()
+
+last_feature_commitmsg=$(mktemp /tmp/commitmsg.XXXXXX)
+
+echo "# Commit message to describe the feature added by this history:" >> ${last_feature_commitmsg}
+echo "#" >> ${last_feature_commitmsg}
+
+commit=$(git rev-parse HEAD)
+while [ 1 ] ; do
+    set +e
+    git show --pretty=%B --no-patch $commit | head -n 1 | grep ^Revert:
+    result=$?
+    set -e
+
+    versions+=($commit)
+
+    echo "# "$(git show --pretty=%B --no-patch $commit | head -n 1) >> ${last_feature_commitmsg}
+    if [[ "$result" != "0" ]] ; then
+	set +e
+	git show --pretty=%B --no-patch $commit | head -n 1 | grep ^First:
+	result=$?
+	set -e
+
+	if [[ "$result" != "0" ]] ; then
+	    echo "Expected earliest commit to start with 'First: '"
+	    exit -1
+	fi
+
+	last_commit=${commit}
+	base_commit=$(git rev-parse $commit~1)
+	break
+    fi
+
+    commit=$(git rev-parse $commit~1)
+done
+
+parent=${base_commit}
+i=0
+while [ "$i" != ${#versions[@]} ] ; do
+    commit=${versions[$i]}
+
+    if [[ $i == "0" ]] ; then
+	refcommit=${last_commit}
+    else
+	refcommit=${versions[$(( $i - 1 ))]}
+    fi
+
+    commitmsg=$(mktemp /tmp/commitmsg.XXXXXX)
+    tree=$(git show --pretty=%T --no-patch ${commit})
+    if [[ "${refcommit}" == ${last_commit} ]] ; then
+	git show --pretty=%B --no-patch ${refcommit} | sed -E '1s/^First: //g' > ${commitmsg}
+    else
+	git show --pretty=%B --no-patch ${refcommit} | sed -E '1s/^Revert: //g' > ${commitmsg}
+    fi
+    parent=$(git commit-tree ${tree} -p ${parent} -F ${commitmsg})
+    rm -f ${commitmsg}
+    i=$(($i + 1))
+done
+
+rm -f ${last_feature_commitmsg}
+
+echo
+echo "Changed to different history:"
+echo
+
+git --no-pager log --no-decorate --oneline --oneline ${base_commit}..
+
+echo
+echo "New history: ${parent}"
+echo
+
+git --no-pager log --no-decorate --oneline --oneline ${base_commit}..${parent}
+git reset --hard ${parent}
