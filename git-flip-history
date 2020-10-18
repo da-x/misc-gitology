@@ -1,5 +1,24 @@
 #!/bin/bash
 
+#
+# This script flips the history of a branch that is structured in the following way.
+#
+# For example, let's have a history, where the first commit adds 4 features, and
+# each of the 3 proceeding commits reverts 3 of the features one by one:
+#
+#    Revert: A
+#    Revert: B
+#    Revert: C
+#    First: D
+#
+# The result branch after running this command will be the following:
+#
+#    C
+#    B
+#    A
+#    D
+#
+
 set -euo pipefail
 
 if [[ $(git diff --exit-code) ]] ; then
