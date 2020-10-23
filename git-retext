@@ -13,6 +13,8 @@ import sys
 import os
 import tempfile
 import re
+import subprocess
+
 from optparse import OptionParser
 
 def system(cmd):
@@ -63,8 +65,16 @@ def main():
         print("Unable to retrive original revision", file=sys.stderr)
         return
 
+
+    rc = subprocess.call(['which', 'recountdiff'])
+    if rc != 0:
+        print('recountdiff missing in path!', file=sys.stderr)
+        return
+
     e_system(f"git rev-parse {base} > /dev/null")
     editor = os.popen("git config core.editor").read().strip()
+    if not editor:
+        editor = os.getenv("EDITOR", "vi")
 
     filename = tempfile.mktemp("git-retext.diff")
 
