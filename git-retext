@@ -90,14 +90,6 @@ def main():
                 ret = pipe.close()
                 if ret:
                     error_msg("recountdiff returned error")
-                #
-                # For debugging;
-                #
-                # fobj = open(filename + "-2", "w")
-                # fobj.write(fixed)
-                # fobj.close()
-                # os.system(f"diff -urN {filename} {filename}-2")
-
                 new_data.append(fixed)
 
             fobj = open(filename, "w")

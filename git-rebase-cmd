@@ -12,12 +12,14 @@ Here, the numbers given are from the end of the 'pick' list, where the last
 item is '0', the one before last is `1`, so forth, to match 'HEAD', 'HEAD~1',
 and 'HEAD~2', and so forth.
 
-    drop <nr>     Change the item `nr` to 'drop'
-    sink <a> <b>  Swap between items 'a' and 'b'.
-    flip          Like 'swap 0 1', for when you want to swap the
-                  two most recent commits.
-    float <a>     Move commit 'a' to be last commit applied.
-    sink <a>      Move commit 'a' to be first commit applied.
+    fixup <nr>       Change the item `nr` to 'fixup'
+    iexec <nr> <cmd> Insert an exec as item `nr`
+    drop <nr>        Change the item `nr` to 'drop'
+    sink <a> <b>     Swap between items 'a' and 'b'.
+    flip             Like 'swap 0 1', for when you want to swap the
+                     two most recent commits.
+    float <a>        Move commit 'a' to be last commit applied.
+    sink <a>         Move commit 'a' to be first commit applied.
 
 Other command line options:
 
@@ -77,9 +79,14 @@ def parse_commands(commands):
         if raw_cmds[0] == "drop":
             del raw_cmds[0]
             cmds.append(("drop", parse_int("drop", raw_cmds)))
-        if raw_cmds[0] == "fixup":
+        elif raw_cmds[0] == "fixup":
             del raw_cmds[0]
             cmds.append(("fixup", parse_int("fixup", raw_cmds)))
+        elif raw_cmds[0] == "iexec":
+            del raw_cmds[0]
+            v = parse_int("iexec", raw_cmds)
+            e = parse_str("iexec", raw_cmds)
+            cmds.append(("iexec", v, e))
         elif raw_cmds[0] == "float":
             del raw_cmds[0]
             cmds.append(("float", parse_int("float", raw_cmds)))
@@ -124,6 +131,12 @@ def from_rebase(command_line, rebase_script):
             if line_nr >= 0 and line_nr < len(script):
                 x = len(script) - line_nr - 1
                 script[x] = 'fixup ' + script[x].split(' ', 1)[1]
+        elif command[0] == "iexec":
+            line_nr = command[1]
+            cmd = command[2]
+            if line_nr >= 0 and line_nr < len(script):
+                x = len(script) - line_nr - 1
+                script.insert(x, 'exec ' + cmd)
         elif command[0] == "swap":
             a_nr = command[1]
             b_nr = command[2]
@@ -160,6 +173,16 @@ def parse_int(prefix, raw_cmds):
         abort(f"{prefix} needs a line number ([1-])")
     try:
         v = int(raw_cmds[0])
+    except ValueError:
+        abort(f"{prefix} needs an int")
+    del raw_cmds[0]
+    return v
+
+def parse_str(prefix, raw_cmds):
+    if len(raw_cmds) == 0:
+        abort(f"{prefix} needs a line number ([1-])")
+    try:
+        v = raw_cmds[0]
     except ValueError:
         abort(f"{prefix} needs an int")
     del raw_cmds[0]
