@@ -14,6 +14,7 @@ and 'HEAD~2', and so forth.
 
     fixup <nr>       Change the item `nr` to 'fixup'
     iexec <nr> <cmd> Insert an exec as item `nr`
+    msgdrop <msg>    Drop commits where commit subject matches 'msg' exactly.
     drop <nr>        Change the item `nr` to 'drop'
     sink <a> <b>     Swap between items 'a' and 'b'.
     flip             Like 'swap 0 1', for when you want to swap the
@@ -87,6 +88,10 @@ def parse_commands(commands):
             v = parse_int("iexec", raw_cmds)
             e = parse_str("iexec", raw_cmds)
             cmds.append(("iexec", v, e))
+        elif raw_cmds[0] == "msgdrop":
+            del raw_cmds[0]
+            e = parse_str("msgdrop", raw_cmds)
+            cmds.append(("msgdrop", e))
         elif raw_cmds[0] == "float":
             del raw_cmds[0]
             cmds.append(("float", parse_int("float", raw_cmds)))
@@ -137,6 +142,13 @@ def from_rebase(command_line, rebase_script):
             if line_nr >= 0 and line_nr < len(script):
                 x = len(script) - line_nr - 1
                 script.insert(x, 'exec ' + cmd)
+        elif command[0] == "msgdrop":
+            msg = command[1]
+            for line_nr in range(0, len(script)):
+                parts = script[line_nr].split(' ', 2)
+                if parts[2] == msg:
+                    parts[0] = 'drop'
+                script[line_nr] = ' '.join(parts)
         elif command[0] == "swap":
             a_nr = command[1]
             b_nr = command[2]
