@@ -45,78 +45,186 @@ def abort(msg):
 
 DIFF_LINE = re.compile(r"^diff --git a/(.*) b/(.*)$")
 HUNK_HEADER = re.compile(r"^@@ -[^ ]+ [+]([0-9]+)[ ,][^@]*@@(.*)$")
-OUTPUT = re.compile(r"^ *([0-9])+ +([^:]+):([0-9]+)")
+META_HEADER = re.compile(r":(.*)$")
+UNTRACKED = re.compile(r"[?][?] (.*)$")
+NEW_FILE = re.compile(r"new file")
+EMPTY_INDEX = re.compile(r"index 000000000000..e69de29bb2d1")
+OUTPUT = re.compile(r"(.) ([^:]+):([0-9]+) [#]([0-9])+")
 
-def add(selected_hunks, nr_hunks, commit):
-    cmd = ["git", "-c", "interactive.diffFilter=cat", "add", "-p"]
-    process = subprocess.Popen(cmd,
-                               stdout=subprocess.DEVNULL,
-                               stdin=subprocess.PIPE)
-    selected_hunks = set(selected_hunks)
-    for idx in range(0, nr_hunks):
-        if idx in selected_hunks:
-            process.stdin.write(f"y\n".encode('utf-8'))
-        else:
-            process.stdin.write(f"n\n".encode('utf-8'))
-    process.stdin.close()
-    r = process.wait()
-    if r != 0:
-        abort("Error adding hunks")
-        return
-    if commit:
-        os.system("git commit")
+class DiffInformation(object):
+    def __init__(self, args):
+        filename_color = "\x1b[38;2;155;255;155m"
+        white = "\x1b[38;2;255;255;255m"
+        lnum_color = "\x1b[38;2;77;127;77m"
+        grey = "\x1b[38;2;255;255;155m"
+        dark_hunk_idx_color = "\x1b[38;2;0;82;128m"
+        hunk_idx_color = "\x1b[38;2;0;165;255m"
+        staged_color = "\x1b[38;2;0;255;0m"
+        commited_color = "\x1b[38;2;255;255;255m"
+        workdir_color = "\x1b[38;2;255;255;0m"
+        untracked_color = "\x1b[38;2;255;128;0m"
+        args = ' '.join(args)
 
-def get_selected_lines(hunks, output_lines):
-    selected_hunks = []
-    for line in output_lines:
-        m = OUTPUT.match(line.decode('utf-8'))
-        if m:
-            (hunknum, filename, line) = m.groups()
-            hunknum = int(hunknum)
-            line = int(line)
-            selected_hunks.append(hunks[(filename, hunknum)])
-    return selected_hunks
+        filename = ''
+        contextlines = 0
+        hunknum = 1
+        hunkindex = 0
+        hunks = {}
+        matches = []
+        idx_hunks = []
+        remember_new_file = False
 
-def get_hunks(args):
-    filename_color = "\x1b[38;2;155;255;155m"
-    white = "\x1b[38;2;255;255;255m"
-    lnum_color = "\x1b[38;2;77;127;77m"
-    grey = "\x1b[38;2;255;255;155m"
-    args = ' '.join(args)
+        self.idx_untracked_files = None
+        self.nr_untracked_files = 0
+        self.untracked_files = []
+        self.idx_unstaged_hunks = None
+        self.nr_unstaged_hunks = 0
 
-    filename = ''
-    hunknum = 1
-    hunkindex = 0
-    hunks = {}
-    matches = []
-    idx_hunks = []
+        cmd = ""
+        cmd += "echo ':U' ; git status --porcelain | grep '??' ;"
+        cmd += "echo ':W' ; git diff ;"
+        cmd += "echo ':S' ; git diff --staged ;"
+        if args != "":
+            cmd += f"echo ':C' ; git diff {args}..HEAD ;"
+        kind = None
 
-    for line in os.popen(f"git diff {args}").readlines():
-        m = DIFF_LINE.match(line)
-        if m:
-            filename = m.groups(0)[1]
-            hunknum = 1
-            continue
-        m = HUNK_HEADER.match(line)
-        if m:
-            contextlines = 0
-            hunks[(filename, hunknum)] = hunkindex
-            line_num = int(m.groups(0)[0])
-            title = m.groups(0)[1]
-            matches.append("%3d %s%s%s:%s%d%s%s" % (
-                hunknum, filename_color, filename,
-                white, lnum_color, line_num, white, title))
-            idx_hunks.append([filename, line_num])
-            hunkindex += 1
-            hunknum += 1
-            continue
-        if line.startswith('+') or line.startswith('-'):
-            if len(idx_hunks) > 0:
-                if len(idx_hunks[-1]) == 2:
-                    idx_hunks[-1].append(contextlines)
-        elif line.startswith(' '):
-            contextlines += 1
-    return (hunks, matches, idx_hunks)
+        def push_match():
+            kind_color = ''
+            if kind == 'U':
+                kind_color = untracked_color
+                if self.idx_untracked_files is None:
+                    self.idx_untracked_files = len(idx_hunks)
+                self.nr_untracked_files += 1
+                self.untracked_files.append(filename)
+            elif kind == 'W':
+                kind_color = workdir_color
+                if self.idx_unstaged_hunks is None:
+                    self.idx_unstaged_hunks = len(idx_hunks)
+                self.nr_unstaged_hunks += 1
+            elif kind == 'C':
+                kind_color = commited_color
+            elif kind == 'S':
+                kind_color = staged_color
+
+            matches.append("%s%s %s%s%s:%s%d %s%s%s%d%s%s" % (
+                kind_color, kind,
+                filename_color, filename,
+                white, lnum_color, line_num,
+                dark_hunk_idx_color, "#",
+                hunk_idx_color, hunknum,
+                white, title))
+            idx_hunks.append([filename, line_num, 0])
+
+        for line in os.popen(cmd).readlines():
+            m = META_HEADER.match(line)
+            if m:
+                kind = m.groups(0)[0]
+                continue
+
+            whole_file = False
+            if kind == "U":
+                m = UNTRACKED.match(line)
+                if m:
+                    filename = m.groups(0)[0]
+                    whole_file = True
+            else:
+                m = NEW_FILE.match(line)
+                if m:
+                    remember_new_file = True
+                    whole_file = False
+
+            if remember_new_file:
+                m = EMPTY_INDEX.match(line)
+                if m:
+                    whole_file = True
+
+            if whole_file:
+                line_num = 1
+                toplevel = os.popen("git rev-parse --show-toplevel").read().strip()
+                hunks[(kind, filename, 1)] = hunkindex
+                title = ""
+                for line in open(os.path.join(toplevel, filename)).readlines():
+                    title = " " + line.strip()
+                    break
+                push_match()
+                hunkindex += 1
+                continue
+
+            m = DIFF_LINE.match(line)
+            if m:
+                filename = m.groups(0)[1]
+                hunknum = 1
+                continue
+            m = HUNK_HEADER.match(line)
+            if m:
+                contextlines = 0
+                hunks[(kind, filename, hunknum)] = hunkindex
+                line_num = int(m.groups(0)[0])
+                title = m.groups(0)[1]
+                push_match()
+                hunkindex += 1
+                hunknum += 1
+                continue
+            if line.startswith('+') or line.startswith('-'):
+                if len(idx_hunks) > 0:
+                    idx_hunks[-1][2] = contextlines
+            elif line.startswith(' '):
+                contextlines += 1
+
+        self.hunks = hunks
+        self.matches = matches
+        self.idx_hunks = idx_hunks
+
+    def get_selection(self, output_lines):
+        selected_hunks = []
+        for line in output_lines:
+            m = OUTPUT.match(line.decode('utf-8'))
+            if m:
+                (kind, filename, line, hunknum) = m.groups()
+                hunknum = int(hunknum)
+                line = int(line)
+                selected_hunks.append(self.hunks[(kind, filename, hunknum)])
+        return selected_hunks
+
+    def add(self, selected_hunks, commit):
+        if self.nr_untracked_files > 0:
+            p_add = set()
+            for selected_idx in selected_hunks:
+                if selected_idx >= self.idx_untracked_files and \
+                    selected_idx < self.idx_untracked_files + self.nr_untracked_files:
+                    p_add.add(self.untracked_files[selected_idx - self.idx_untracked_files])
+            cmd = ["git", "-c", "interactive.diffFilter=cat", "add"]
+            cmd += list(p_add)
+            process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL)
+            r = process.wait()
+            if r != 0:
+                abort("Error adding hunks")
+                return
+
+        if self.nr_unstaged_hunks > 0:
+            p_add = set()
+            for selected_idx in selected_hunks:
+                if selected_idx >= self.idx_unstaged_hunks and \
+                    selected_idx < self.idx_unstaged_hunks + self.nr_unstaged_hunks:
+                    p_add.add(selected_idx - self.idx_unstaged_hunks)
+
+            cmd = ["git", "-c", "interactive.diffFilter=cat", "add", "-p"]
+            process = subprocess.Popen(cmd,
+                                    stdout=subprocess.DEVNULL,
+                                    stdin=subprocess.PIPE)
+            selected_hunks = set(selected_hunks)
+            for idx in range(0, self.nr_unstaged_hunks):
+                if idx in p_add:
+                    process.stdin.write(f"y\n".encode('utf-8'))
+                else:
+                    process.stdin.write(f"n\n".encode('utf-8'))
+            process.stdin.close()
+            r = process.wait()
+            if r != 0:
+                abort("Error adding hunks")
+                return
+        if commit:
+            os.system("git commit")
 
 def main():
     if sys.argv[1:2] == ["--binding-preview"]:
@@ -124,12 +232,21 @@ def main():
         if not m:
             return
 
-        (hunk_index, filename, line) = m.groups(0)
-        cmd="git diff"
-        if sys.argv[2]:
-            cmd += " " + sys.argv[2]
+        (kind, filename, line, hunk_index) = m.groups(0)
 
-        cmd = f"{cmd} | filterdiff -i 'a/'{filename} -i 'b/'{filename} --hunks {hunk_index} | tail -n +5 | delta-configured"
+        if kind == 'U':
+            cmd = "cat ${filename}"
+        elif kind == 'W':
+            cmd = "git diff"
+        elif kind == 'C':
+            cmd = f"git diff {sys.argv[2]}..HEAD"
+        elif kind == 'S':
+            cmd = f"git diff --staged"
+        else:
+            sys.exit(0)
+
+        if cmd.startswith("git diff"):
+            cmd = f"{cmd} | filterdiff -i 'a/'{filename} -i 'b/'{filename} --hunks {hunk_index} | tail -n +5 | delta-configured"
         sys.exit(os.system(cmd))
         return
     elif sys.argv[1:2] == ["--binding-add"]:
@@ -155,18 +272,17 @@ def main():
         else:
             commit_mode = False
 
-    (hunks, matches, idx_hunks) = get_hunks(args)
-
+    diff_info = DiffInformation(args)
     if reload_command:
         if add_mode:
-            # try:
-            selected_hunks = get_selected_lines(hunks, output_lines)
-            # except:
-            #     from traceback import print_exc
-            #     print_exc(file=sys.stdout)
-            add(selected_hunks, len(matches), commit_mode)
-        (hunks, matches, idx_hunks) = get_hunks(args)
-        for match in matches:
+            try:
+                selection = diff_info.get_selection(output_lines)
+                diff_info.add(selection, commit_mode)
+            except:
+                from traceback import print_exc
+                print_exc(file=sys.stdout)
+        diff_info = DiffInformation(args)
+        for match in diff_info.matches:
             sys.stdout.buffer.write(f"{match}\n".encode('utf-8'))
         return
     else:
@@ -176,15 +292,16 @@ def main():
         add_program = our_program + f" --binding-add '{args}' {{+}}"
 
         fzf_options = [
-            "--ansi", "-e", "--no-sort", "--tac", "-m",
-            "--preview-window", "down:70%:noborder",
+            "--ansi", "-e", "--no-sort", "-m",
+            "--layout=reverse",
+            "--preview-window", "down:50%:noborder",
             "--preview", preview_program,
             "--bind", "alt-a:reload(" + add_program + ")",
         ]
         process = subprocess.Popen(["fzf"] + fzf_options,
                                 stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE)
-        for match in matches:
+        for match in diff_info.matches:
             process.stdin.write(f"{match}\n".encode('utf-8'))
         process.stdin.close()
         res = process.wait()
@@ -193,13 +310,13 @@ def main():
             return
         output_lines = process.stdout.readlines()
 
-    selected_hunks = get_selected_lines(hunks, output_lines)
+    selection = diff_info.get_selection(output_lines)
     if add_mode:
-        add(selected_hunks, len(matches), commit_mode)
+        diff_info.add(selection, commit_mode)
         return
 
-    if len(selected_hunks) == 1:
-        (filename, line_num, contextlines) = idx_hunks[selected_hunks[0]]
+    if selection.is_single():
+        (filename, line_num, contextlines) = selection.single_get()
         editor = os.getenv("EDITOR", "vi")
         r = os.system("bash -c '%s %s +%d'" % (editor, filename, line_num + contextlines))
         sys.exit(r)
