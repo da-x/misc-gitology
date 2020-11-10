@@ -317,8 +317,10 @@ def main():
 
     if len(selection):
         (filename, line_num, contextlines) = diff_info.idx_hunks[selection[0]]
+        toplevel = os.popen("git rev-parse --show-toplevel").read().strip();
         editor = os.getenv("EDITOR", "vi")
-        r = os.system("bash -c '%s %s +%d'" % (editor, filename, line_num + contextlines))
+        r = os.system("bash -c '%s %s +%d'" % (
+            editor, os.path.join(toplevel, filename), line_num + contextlines))
         sys.exit(r)
 
 if __name__ == "__main__":
