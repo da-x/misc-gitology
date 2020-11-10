@@ -315,8 +315,8 @@ def main():
         diff_info.add(selection, commit_mode)
         return
 
-    if selection.is_single():
-        (filename, line_num, contextlines) = selection.single_get()
+    if len(selection):
+        (filename, line_num, contextlines) = diff_info.idx_hunks[selection[0]]
         editor = os.getenv("EDITOR", "vi")
         r = os.system("bash -c '%s %s +%d'" % (editor, filename, line_num + contextlines))
         sys.exit(r)
