@@ -12,6 +12,8 @@ FZF Actions:
              for the output of `git diff`. Works regardless of '-a' command line
              option.
 
+    Alt-C    do 'git commit' for staged hunks.
+
     Return   Unless '-a' is specified, open an editor on a hunk if we selected
              a single one. Otherwise, for '-a', do 'git add -p' on the selected
              hunks and return. If '-c' is specified, also do a 'git commit'.
@@ -186,7 +188,7 @@ class DiffInformation(object):
                 selected_hunks.append(self.hunks[(kind, filename, hunknum)])
         return selected_hunks
 
-    def add(self, selected_hunks, commit):
+    def add(self, selected_hunks):
         if self.nr_untracked_files > 0:
             p_add = set()
             for selected_idx in selected_hunks:
@@ -223,8 +225,6 @@ class DiffInformation(object):
             if r != 0:
                 abort("Error adding hunks")
                 return
-        if commit:
-            os.system("git commit")
 
 def main():
     if sys.argv[1:2] == ["--binding-preview"]:
@@ -249,12 +249,16 @@ def main():
             cmd = f"{cmd} | filterdiff -i 'a/'{filename} -i 'b/'{filename} --hunks {hunk_index} | tail -n +5 | delta-configured"
         sys.exit(os.system(cmd))
         return
-    elif sys.argv[1:2] == ["--binding-add"]:
+    elif sys.argv[1:2] in [["--binding-add"], ["--binding-reload"]]:
         args = [sys.argv[2]]
         output_lines = [o.encode('utf-8') for o in sys.argv[3:]]
         reload_command = True
-        add_mode = True
+        add_mode = False
         commit_mode = False
+        if sys.argv[1:2] == ["--binding-add"]:
+            add_mode = True
+        elif sys.argv[1:2] == ["--binding-reload"]:
+            pass
     else:
         parser = OptionParser()
         parser.add_option("-a", "--add", dest="add", action="store_true")
@@ -277,10 +281,12 @@ def main():
         if add_mode:
             try:
                 selection = diff_info.get_selection(output_lines)
-                diff_info.add(selection, commit_mode)
+                diff_info.add(selection)
             except:
                 from traceback import print_exc
                 print_exc(file=sys.stdout)
+        if commit_mode:
+            os.system("git commit")
         diff_info = DiffInformation(args)
         for match in diff_info.matches:
             sys.stdout.buffer.write(f"{match}\n".encode('utf-8'))
@@ -290,6 +296,7 @@ def main():
         our_program = sys.argv[0]
         preview_program = our_program + f" --binding-preview '{args}' {{}}"
         add_program = our_program + f" --binding-add '{args}' {{+}}"
+        reload_program = our_program + f" --binding-reload '{args}' {{+}}"
 
         fzf_options = [
             "--ansi", "-e", "--no-sort", "-m",
@@ -297,6 +304,7 @@ def main():
             "--preview-window", "down:50%:noborder",
             "--preview", preview_program,
             "--bind", "alt-a:reload(" + add_program + ")",
+            "--bind", "alt-c:execute(git commit > /dev/tty)+reload(" + reload_program + ")",
         ]
         process = subprocess.Popen(["fzf"] + fzf_options,
                                 stdin=subprocess.PIPE,
@@ -312,7 +320,9 @@ def main():
 
     selection = diff_info.get_selection(output_lines)
     if add_mode:
-        diff_info.add(selection, commit_mode)
+        diff_info.add(selection)
+        if commit:
+            os.system("git commit")
         return
 
     if len(selection):
