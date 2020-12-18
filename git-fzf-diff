@@ -305,6 +305,7 @@ def main():
             "--preview", preview_program,
             "--bind", "alt-a:reload(" + add_program + ")",
             "--bind", "alt-c:execute(git commit > /dev/tty)+reload(" + reload_program + ")",
+            "--header", "\n[Return] Open editor on hunk   [M-a] Stage selected hunk(s)   [M-c] commit staged hunks\n\n"
         ]
         process = subprocess.Popen(["fzf"] + fzf_options,
                                 stdin=subprocess.PIPE,
