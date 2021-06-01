@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+
+#
+# Commit-msg hook that automatically expandes Fixes: lines with
+# the relevant commit message.
+#
+# Fixes: 13d847a0d3
+#
+#    to:
+#
+# Fixes: 13d847a0d3 ("adadad asdasd")
+#
+
+import sys
+import os
+import re
+
+RE = re.compile("^Fixes: ([a-f0-9_]+)$")
+
+RESET = '\033[0m'
+GREEN = '\033[01m\033[32m'
+YELLOW = '\033[01m\033[33m'
+WHITE = '\033[37m'
+
+def main():
+    if os.getenv("GIT_FIXES_COMMIT_MSG", "") == "disable":
+        # Script is disabled
+        return
+
+    myself = os.popen("git config user.name").read().strip()
+    if os.getenv("GIT_AUTHOR_NAME", "") != myself:
+        # Don't fix commits of others
+        return
+
+    commit_msg_file = sys.argv[1]
+    commit_msg_file_tmp = commit_msg_file + ".mod.tmp"
+
+    lines = []
+    modified = False
+    for line in open(commit_msg_file, "r").readlines():
+        m = RE.match(line)
+        if m:
+            line = line.strip()
+            rev = m.groups(0)[0]
+            new_line = os.popen(f'git show {rev} --pretty="%h %s" -s 2>/dev/null')\
+                .read().strip()
+            if new_line:
+                (commithash, subject) = new_line.split(' ',  1)
+                new_line = "Fixes: %s (%r)" % (commithash, subject)
+                print(f"{GREEN}Auto-modified: {WHITE}{new_line}{RESET}")
+                line = new_line
+            else:
+                print(f"{YELLOW}No ref for {rev}{RESET}")
+            line = line + "\n"
+            modified = True
+        lines.append(line)
+
+    if not modified:
+        return
+
+    print()
+
+    f = open(commit_msg_file_tmp, "w")
+    f.write("".join(lines))
+    f.close()
+
+    os.rename(commit_msg_file_tmp, commit_msg_file)
+
+if __name__ == "__main__":
+    main()
