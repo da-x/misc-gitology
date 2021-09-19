@@ -27,7 +27,7 @@ class RefTrack(object):
             base_state = os.popen(f"git show-ref {base} 2>/dev/null").read().strip()
             if base_state == "":
                 # Try most recent tag
-                base_state = os.popen(f"git describe --abbrev=0 {branch}").read().strip()
+                base_state = os.popen(f"git describe --tags --abbrev=0 {branch}").read().strip()
                 if base_state == "":
                     print(f"Did not find a default 'base' branch {base}", file=sys.stderr)
                     raise Abort()
