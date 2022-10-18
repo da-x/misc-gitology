@@ -15,6 +15,7 @@ import subprocess as sp
 import sys
 import re
 import tempfile
+import argparse
 
 PREFIX = "refs/heads/"
 
@@ -23,27 +24,39 @@ def dict_diff(a, b):
         yield (a.get(key, None), b.get(key, None))
 
 def main():
-    x = os.popen("git show-ref", "r")
+    parser = argparse.ArgumentParser(description='Mass branch editor')
+    parser.add_argument('--by-date', dest="by_date", action='store_true')
+    args = parser.parse_args()
+
+    x = os.popen('git for-each-ref --format="%(objectname) %(refname) ' +
+                 '# %(committerdate:format:%Y-%m-%d): %(subject)"', "r")
     data = x.read()
     x.close()
 
-    branches = {}
-    idx = 1
+    lst = []
     for line in data.splitlines():
-        m = re.match(r"^([a-f0-9]+) ([^ ]+)$", line)
-        (githash, refname) = m.groups()
+        m = re.match(r"^([a-f0-9]+) ([^ ]+) (.*)$", line)
+        (githash, refname, meta) = m.groups()
         if not refname.startswith(PREFIX):
             continue
-        branches[idx] = (githash[:12], refname)
+        lst.append((githash, refname, meta))
+
+    if args.by_date:
+        lst.sort(key=lambda item: item[2])
+
+    branches = {}
+    idx = 1
+    for item in lst:
+        branches[idx] = item
         idx += 1
 
     editor = os.popen("git config core.editor", "r").read().strip()
     filename = tempfile.mktemp("git-mass-branch-rename")
     filehandle = open(filename, "w")
-    for (key, (githash, refname)) in branches.iteritems():
+    for (key, (githash, refname, meta)) in branches.iteritems():
         refname = refname[len(PREFIX):]
         githash = githash[:12]
-        print >>filehandle, "%d: %s %s" % (key, githash, refname)
+        print >>filehandle, "%d: %s %-35s  %s" % (key, githash, refname, meta)
     filehandle.close()
 
     cmd = "%s %s" % (editor, filename)
@@ -51,8 +64,8 @@ def main():
 
     output = {}
     for line in open(filename):
-        m = re.match(r"^([0-9]+): ([a-f0-9]+) ([^ ]+)$", line.strip())
-        (idx, githash, new_name) = m.groups(0)
+        m = re.match(r"^([0-9]+): +([a-f0-9]+) +([^ ]+)( +.*)$", line.strip())
+        (idx, githash, new_name, _) = m.groups(0)
         idx = int(idx)
         output[idx] = (githash, new_name)
 
@@ -61,10 +74,10 @@ def main():
     for (orig, after) in dict_diff(branches, output):
         cmd = None
         if after is None and orig is not None:
-            (orig_githash, orig_refname) = orig
+            (orig_githash, orig_refname, _) = orig
             cmd = "git update-ref -d %s" % (orig_refname, )
         elif orig is not None and after is not None:
-            (orig_githash, orig_refname) = orig
+            (orig_githash, orig_refname, _) = orig
             (new_githash, new_name) = after
             branch_name = orig_refname[len(PREFIX):]
             cmd = ""
