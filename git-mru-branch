@@ -69,5 +69,9 @@ for (ts, branch) in lst:
         final_set.add(branch)
         final_list.insert(0, branch)
 
+for branch in existing_branches:
+    if branch not in final_set:
+        final_list.insert(0, branch)
+
 for branch in final_list:
     print(branch)
