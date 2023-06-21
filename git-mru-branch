@@ -2,6 +2,9 @@
 
 import os
 import re
+import time
+from optparse import OptionParser
+
 
 def main():
     #
@@ -11,6 +14,13 @@ def main():
     # Can be used with `pick` (https://github.com/calleerlandsson/pick) or fzf.
     #
 
+    parser = OptionParser()
+
+    # Add branch state vebosity
+    parser.add_option("-v", "--verbose", dest="verbose", action="store_true")
+    parser.add_option("-f", "--fzf-prefix", dest="fzf_prefix", action="store_true")
+
+    (options, _args) = parser.parse_args()
     m = re.compile(r"([0-9]+[ \t]+[+-/]?[0-9]+)[ \t]+checkout: moving from ([.A-Za-z0-9_/-]+) to ([.A-Za-z0-9_/-]+)")
 
     git_dir = os.popen("git rev-parse --git-common-dir").read().strip()
@@ -33,6 +43,8 @@ def main():
     prep_set = set()
     lst = []
 
+    worktrees = get_worktree_state()
+
     # Take in branches according to the timestamp of their mention
     # in the reflog.
     for head_path in head_paths:
@@ -52,18 +64,31 @@ def main():
 
     # Take in branches according to the timestamp of their 'ref' file
     # under .git.
+    ref_file_ts = set()
     for branch in existing_branches:
         branch_ref = os.path.join(git_dir, "refs", "heads", branch)
         if os.path.exists(branch_ref):
             ts = os.stat(branch_ref).st_mtime
+            ref_file_ts.add(branch)
             lst.append((int(ts), branch))
+
+    # Take the remaining branches according to the commit date
+    branch_info = get_branches_info()
+    for (branch, info) in branch_info.items():
+        if branch not in ref_file_ts and branch not in prep_set:
+            lst.append((int(info["timestamp"]), branch))
 
     # Sort, keeping most recent branches last
     lst.sort()
+    branch_to_ts = {}
+    for (ts, branch) in lst:
+        branch_to_ts[branch] = ts
     lst.reverse()
 
     final_list = []
     final_set = set()
+
+    current_branch = os.popen("git rev-parse --abbrev-ref HEAD").read().strip()
 
     for (ts, branch) in lst:
         if branch not in final_set:
@@ -74,8 +99,141 @@ def main():
         if branch not in final_set:
             final_list.insert(0, branch)
 
+    max_len_branch = 0
     for branch in final_list:
-        print(branch)
+        max_len_branch = max(len(branch), max_len_branch)
+    for branch in final_list:
+        if options.verbose:
+            worktree = worktrees.get(branch, None)
+            worktree_name = ""
+            worktree_color = ""
+            if worktree:
+                if os.path.exists(worktree["worktree"]):
+                    if os.path.exists(os.path.join(worktree["worktree"],
+                                                   ".git/objects")):
+                        worktree_name = "WtMain"
+                        worktree_color = color24(0, 200, 200)
+                    else:
+                        worktree_name = "WtExist"
+                        worktree_color = color24(0, 200, 0)
+                else:
+                    worktree_name = "WtMeta"
+                    worktree_color = color24(200, 200, 0)
+            color_reset = colorreset()
+            date = ""
+            date_color = ""
+            ts = branch_to_ts.get(branch, None)
+            if ts:
+                date_color = color24(100, 100, 100)
+                date = pretty_date(int(time.time()) - ts)
+            info = branch_info.get(branch, None)
+            objname_color = ""
+            subject_color = ""
+            if info:
+                githash = info['objname'][:12]
+                subject = info['subject']
+                objname_color = color24(70, 70, 70)
+                subject_color = color24(210, 230, 250)
+
+            branch_color = ""
+            if current_branch == branch:
+                branch_color = backcolor24(30, 30, 30)
+
+            if options.fzf_prefix:
+                print(f"{branch} ", end="")
+            print(
+                f"{date_color}{date:>14}{color_reset} "
+                f"{worktree_color}{worktree_name:>7}{color_reset} "
+                f"{branch_color}{branch:<{max_len_branch}}{color_reset} "
+                f"{objname_color}{githash}{color_reset} "
+                f"{subject_color}{subject}{color_reset}"
+            )
+        else:
+            print(branch)
+
+
+def get_branches_info():
+    from dateutil import parser
+    cmd = ("git for-each-ref --sort=-committerdate "
+           "refs/heads/ --format='%(committerdate) ;_;_; %(refname) ;_;_; "
+           "%(objectname) ;_;_; %(subject)'")
+    d = {}
+    for line in os.popen(cmd).readlines():
+        (ts, b, objname, subject) = line.split(' ;_;_; ')
+        b = b.strip()
+        if b.startswith('refs/heads/'):
+            b = b[len('refs/heads/'):]
+        ts_v = parser.parse(ts)
+        d[b] = dict(timestamp=int(time.mktime(ts_v.timetuple())),
+                    objname=objname, subject=subject.strip())
+    return d
+
+
+def get_worktree_state():
+    worktree = dict()
+    worktree_by_branch = dict()
+    for line in os.popen("git worktree list --porcelain").readlines():
+        if not line.strip():
+            if worktree['HEAD'] != '0000000000000000000000000000000000000000':
+                prefix = 'refs/heads/'
+                if 'branch' in worktree:
+                    if worktree['branch'].startswith(prefix):
+                        worktree['branch'] = worktree['branch'][len(prefix):]
+                    worktree_by_branch[worktree['branch']] = worktree
+                worktree = {}
+            continue
+        params = line.strip().split(' ', 1)
+        if len(params) == 2:
+            worktree[params[0]] = params[1]
+    return worktree_by_branch
+
+
+def pretty_date(diff):
+    """
+    Get a datetime object or a int() Epoch timestamp and return a
+    pretty string like 'an hour ago', 'Yesterday', '3 months ago',
+    'just now', etc
+    """
+    second_diff = int(diff)
+    day_diff = int(diff / 86400)
+
+    if day_diff < 0:
+        return ''
+
+    if day_diff == 0:
+        if second_diff < 10:
+            return "just now"
+        if second_diff < 60:
+            return str(second_diff) + " seconds"
+        if second_diff < 120:
+            return "a minute"
+        if second_diff < 3600:
+            return str(int(second_diff / 60)) + " minutes"
+        if second_diff < 7200:
+            return "an hour"
+        if second_diff < 86400:
+            return str(int((second_diff / 3600))) + " hours"
+    if day_diff == 1:
+        return "Yesterday"
+    if day_diff < 7:
+        return str(day_diff) + " days"
+    if day_diff < 31:
+        return str(int(day_diff / 7)) + " weeks"
+    if day_diff < 365:
+        return str(int(day_diff / 30)) + " months"
+    return str(int(day_diff / 365)) + " years"
+
+
+def color24(r, g, b1):
+    return "\x1b[38;2;%d;%d;%dm" % (r, g, b1)
+
+
+def backcolor24(r, g, b1):
+    return "\x1b[48;2;%d;%d;%dm" % (r, g, b1)
+
+
+def colorreset():
+    return "\x1b[0;m"
 
 
 if __name__ == "__main__":
