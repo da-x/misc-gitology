@@ -3,75 +3,80 @@
 import os
 import re
 
-#
-# Here, the recently checked out branches from the reflog are
-# presented sorted according to the most recently checked out branch.
-#
-# Can be used with `pick` (https://github.com/calleerlandsson/pick) or fzf.
-#
+def main():
+    #
+    # Here, the recently checked out branches from the reflog are
+    # presented sorted according to the most recently checked out branch.
+    #
+    # Can be used with `pick` (https://github.com/calleerlandsson/pick) or fzf.
+    #
 
-m = re.compile(r"([0-9]+[ \t]+[+-/]?[0-9]+)[ \t]+checkout: moving from ([.A-Za-z0-9_/-]+) to ([.A-Za-z0-9_/-]+)")
+    m = re.compile(r"([0-9]+[ \t]+[+-/]?[0-9]+)[ \t]+checkout: moving from ([.A-Za-z0-9_/-]+) to ([.A-Za-z0-9_/-]+)")
 
-git_dir = os.popen("git rev-parse --git-common-dir").read().strip()
-existing_branches = set([l[2:].strip() for l in os.popen("git branch").readlines()])
+    git_dir = os.popen("git rev-parse --git-common-dir").read().strip()
+    existing_branches = set([l[2:].strip() for l in os.popen("git branch").readlines()])
 
-# Take the list of worktrees HEADs logs
-head_paths = []
-candidate = os.path.join(git_dir, "logs", "HEAD")
-if os.path.exists(candidate):
-    head_paths.append(candidate)
+    # Take the list of worktrees HEADs logs
+    head_paths = []
+    candidate = os.path.join(git_dir, "logs", "HEAD")
+    if os.path.exists(candidate):
+        head_paths.append(candidate)
 
-worktrees = os.path.join(git_dir, "worktrees")
-if os.path.exists(worktrees):
-    for sub in os.listdir(worktrees):
-        worktree = os.path.join(worktrees, sub)
-        candidate = os.path.join(worktree, "logs", "HEAD")
-        if os.path.exists(candidate):
-            head_paths.append(candidate)
+    worktrees = os.path.join(git_dir, "worktrees")
+    if os.path.exists(worktrees):
+        for sub in os.listdir(worktrees):
+            worktree = os.path.join(worktrees, sub)
+            candidate = os.path.join(worktree, "logs", "HEAD")
+            if os.path.exists(candidate):
+                head_paths.append(candidate)
 
-prep_set = set()
-lst = []
+    prep_set = set()
+    lst = []
 
-# Take in branches according to the timestamp of their mention
-# in the reflog.
-for head_path in head_paths:
-    head = open(head_path).readlines()
-    head.reverse()
-    for i in head:
-        r = m.search(i)
-        if not r:
-            continue
+    # Take in branches according to the timestamp of their mention
+    # in the reflog.
+    for head_path in head_paths:
+        head = open(head_path).readlines()
+        head.reverse()
+        for i in head:
+            r = m.search(i)
+            if not r:
+                continue
 
-        (timestamp, from_src, to_dest) = r.groups(0)
-        timestamp = timestamp.split(' ')[0]
-        for name in [to_dest, from_src]:
-            if name in existing_branches:
-                lst.append((int(timestamp), name))
-                prep_set.add(name)
+            (timestamp, from_src, to_dest) = r.groups(0)
+            timestamp = timestamp.split(' ')[0]
+            for name in [to_dest, from_src]:
+                if name in existing_branches:
+                    lst.append((int(timestamp), name))
+                    prep_set.add(name)
 
-# Take in branches according to the timestamp of their 'ref' file
-# under .git.
-for branch in existing_branches:
-    branch_ref = os.path.join(git_dir, "refs", "heads", branch)
-    if os.path.exists(branch_ref):
-        ts = os.stat(branch_ref).st_mtime
-        lst.append((int(ts), branch))
+    # Take in branches according to the timestamp of their 'ref' file
+    # under .git.
+    for branch in existing_branches:
+        branch_ref = os.path.join(git_dir, "refs", "heads", branch)
+        if os.path.exists(branch_ref):
+            ts = os.stat(branch_ref).st_mtime
+            lst.append((int(ts), branch))
 
-# Sort, keeping most recent branches last
-lst.sort()
-lst.reverse()
+    # Sort, keeping most recent branches last
+    lst.sort()
+    lst.reverse()
 
-final_list = []
-final_set = set()
+    final_list = []
+    final_set = set()
 
-for (ts, branch) in lst:
-    if branch not in final_set:
-        final_set.add(branch)
-        final_list.insert(0, branch)
+    for (ts, branch) in lst:
+        if branch not in final_set:
+            final_set.add(branch)
+            final_list.insert(0, branch)
 
-for branch in existing_branches:
-    if branch not in final_set:
-        final_list.insert(0, branch)
+    for branch in existing_branches:
+        if branch not in final_set:
+            final_list.insert(0, branch)
 
-for branch in final_list:
-    print(branch)
+    for branch in final_list:
+        print(branch)
+
+
+if __name__ == "__main__":
+    main()
