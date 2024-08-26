@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 """
 Git branch editor.
@@ -53,10 +53,10 @@ def main():
     editor = os.popen("git config core.editor", "r").read().strip()
     filename = tempfile.mktemp("git-mass-branch-rename")
     filehandle = open(filename, "w")
-    for (key, (githash, refname, meta)) in branches.iteritems():
+    for (key, (githash, refname, meta)) in branches.items():
         refname = refname[len(PREFIX):]
         githash = githash[:12]
-        print >>filehandle, "%d: %s %-35s  %s" % (key, githash, refname, meta)
+        print("%d: %s %-35s  %s" % (key, githash, refname, meta), file=filehandle)
     filehandle.close()
 
     cmd = "%s %s" % (editor, filename)
@@ -89,7 +89,7 @@ def main():
                 cmd += "git branch -M %s %s" % (branch_name, new_name)
 
         if cmd:
-            print cmd
+            print(cmd)
             os.system(cmd)
 
 if __name__ == "__main__":
