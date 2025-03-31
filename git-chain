@@ -1,0 +1,549 @@
+#!/usr/bin/env python3
+
+from typing import NamedTuple
+import subprocess
+import datetime
+import time
+
+"""
+Helper program to handle ongoing work that is temporarily split to several
+commits.
+
+The purpose is to stop working with amends, and only occasionally squash
+tenative work together.
+
+    new - Create a new as commit message with 'Git-chain: <UUID>', will pick
+        color from palette.
+    link - FZF-pick a chain (see below), and create a new commit for it, with
+        the 'Git-chain: <uuid>' metadata
+    defrag - Perform minimal re-arragment of commit history using rebase so
+        that chains are sequitive. Show what we are going to change and
+        confirm. There can be conflicts to resolve.
+    kill - FZF-pick a chain, and perform git rebase to remove all its
+        fragments. Can create conflicts.
+    squash - Squash and short each chain to a single commit
+    finish - FZF-pick a chain, move it to be first, then squash it, then remove
+        the `ChainItem: ' meta-data. The move stage can cause conflicts.
+    reword - FZF-pick a chain, edit the commit message of a chain (will edit
+        the first commit, the other ones only keep their subject line)
+    list - Just list the current chain fragments.
+
+    -----
+
+    No args - pick one of the commands with FZF
+    If first arg is '--', take the rest as a chain to match and then only FZF
+    the command we want to execute on it.
+
+FZF-pick a chain, either of the following:
+    - Collect past chains from UUIDs of recent commits from HEAD (stopping at
+      the first one that does not have a 'ChainItem: UUID' klline) and run FZF
+    - Uniqely figure out based on matching of commit message with input from
+      command line
+
+
+"""
+
+import sys
+import os
+import tempfile
+import re
+from optparse import OptionParser
+import itertools
+import tempfile
+import argparse
+import inspect
+import shutil
+
+
+def system(cmd):
+    return os.system(cmd)
+
+
+class Abort(Exception):
+    pass
+
+
+def abort(msg):
+    print(msg, file=sys.stderr)
+    sys.exit(-1)
+
+
+def color24(r, g, b1):
+    return "\x1b[38;2;%d;%d;%dm" % (r, g, b1)
+
+
+def backcolor24(r, g, b1):
+    return "\x1b[48;2;%d;%d;%dm" % (r, g, b1)
+
+
+COLOR_RE = re.compile("^#?([a-f0-9][a-f0-9])([a-f0-9][a-f0-9])([a-f0-9][a-f0-9])$")
+
+
+def parse_rgb(colorstr):
+    m = COLOR_RE.match(colorstr)
+    m = m.groups(0)
+    return (int(m[0], 16), int(m[1], 16), int(m[2], 16))
+
+
+def colorreset():
+    return "\x1b[0;m"
+
+
+DRY_RUN = "GIT_REBASE_CMD__OPTION_DRY_RUN"
+
+
+def from_rebase(command_line, rebase_script):
+    pass
+
+
+class ChainItem(NamedTuple):
+    githash: str
+    message: str
+    chain: str
+    commitdate: str
+
+    def subject(self) -> str:
+        return self.message.split("\n", 1)[0]
+
+
+class ChainFragment(NamedTuple):
+    items: list[ChainItem]
+    full: bool
+    index: int
+
+    def subject(self) -> str:
+        return self.items[0].subject()
+
+    def chain(self) -> str:
+        return self.items[0].chain
+
+    def message(self) -> str:
+        return self.items[0].message
+
+
+class ChainInfo(NamedTuple):
+    frags: list[ChainFragment]
+    colors: dict[str, str]
+    chain_squash_count: dict[str, int]
+    base: str
+
+    def chain(self):
+        return self.frags[0].chain()
+
+    def reverse(self):
+        frags = list(self.frags)
+        frags.reverse()
+
+        for idx, frag in enumerate(frags):
+            l = list(frag.items)
+            l.reverse()
+            frags[idx] = ChainFragment(index=frag.index, full=frag.full, items=l)
+
+        return ChainInfo(colors=self.colors, frags=frags,
+                         base=self.base,
+                         chain_squash_count=self.chain_squash_count)
+
+    def find_first_frag(self, chain: str):
+        for frag in self.frags:
+            if frag.chain() == chain:
+                return frag
+
+
+def get_chain_info() -> ChainInfo:
+    data = None
+    with os.popen("git log --oneline --pretty='%H %ct%n%B###' -n 1000") as f:
+        data = f.read()
+
+    r = re.compile("^Git-chain: ([a-f0-9-]+)$")
+    r2 = re.compile("^Git-chain-color: #([a-f0-9]+)$")
+    r3 = re.compile("^Git-squash-count: ([0-9]+)$")
+    chains = []
+    chain_colors = {}
+    chain_squash_count = {}
+    base = None
+    for commit in data.split("\n###\n"):
+        if not commit:
+            continue
+
+        (githashdate, message) = commit.split("\n", 1)
+        (githash, commitdate) = githashdate.split(" ")
+        chain = None
+        for line in message.split("\n"):
+            m = r.match(line)
+            if m:
+                chain = m.groups(0)[0]
+            m = r2.match(line)
+            if m:
+                chain_colors[chain] = m.groups(0)[0]
+            m = r3.match(line)
+            if m:
+                chain_squash_count[chain] = int(m.groups(0)[0], 10)
+        if not chain:
+            base = githash
+            break
+
+        chains.append(ChainItem(githash=githash, commitdate=commitdate, message=message, chain=chain))
+
+    def f(a):
+        return a.chain
+
+    counts = dict()
+    out = []
+    for (key, l) in itertools.groupby(chains, key=f):
+        cf = ChainFragment(items=list(l), index=0, full=True)
+        if cf.chain() not in counts:
+            counts[cf.chain()] = 1
+        else:
+            counts[cf.chain()] += 1
+        j = counts[cf.chain()] - 1
+        cf = ChainFragment(items=cf.items, index=j, full=True)
+        out.append(cf)
+
+    for (chain, frags) in counts.items():
+        if frags < 2:
+            continue
+        out2 = []
+        for cf in out:
+            if cf.chain() == chain:
+                out2.append(ChainFragment(items=cf.items, index=cf.index, full=False))
+            else:
+                out2.append(cf)
+        out = out2
+
+    return ChainInfo(frags=out, colors=chain_colors, base=base, chain_squash_count=chain_squash_count)
+
+
+def list_chains():
+    for chain in get_chain_info().frags:
+        print(chain)
+
+
+
+class Selection(NamedTuple):
+    githash: str
+    chain_id: str
+
+
+def pick_fzf() -> Selection:
+    chain_info = get_chain_info()
+    fzf_options = [
+        "--ansi", "-e", "--no-sort", "--height=30%", "--with-nth", "3.."
+    ]
+    inp = []
+    current_time = time.time()
+    statm = re.compile("^([^\t]+)\t([^\t]+)\t.*")
+    red = color24(255, 0, 0)
+    green = color24(0, 255, 0)
+
+    for chain_frag in chain_info.frags:
+        len_items = len(chain_frag.items)
+        for (idx, item) in enumerate(chain_frag.items):
+            color = color24(*parse_rgb(chain_info.colors.get(item.chain, "#ffffff")))
+            if idx == 0:
+                if len_items == 1:
+                    prefix = "───"
+                else:
+                    prefix = "└──"
+            else:
+                if idx + 1 == len_items:
+                    prefix = "┌──"
+                else:
+                    prefix = "├──"
+
+            date = int(item.commitdate, 10)
+            time_diff = current_time - date
+            brightness = 255
+            if time_diff > 3600:
+                brightness = 170
+            if time_diff > 3600*24:
+                brightness = 150
+            if time_diff > 3600*24*7:
+                brightness = 100
+            if time_diff > 30*3600*24*7:
+                brightness = 70
+            datecolor = color24(brightness, brightness, brightness)
+            date = datetime.datetime.fromtimestamp(date).strftime('%Y-%m-%d %H:%M:%S')
+            total_added = 0
+            total_removed = 0
+            ministat_monochrome = []
+            ministat = []
+            with os.popen(f"git show {item.githash} --pretty='' --numstat") as p:
+                for line in p:
+                    m = statm.match(line)
+                    if not m:
+                        continue
+                    (added, removed) = m.groups(0)
+                    if added != "-":
+                        total_added += int(added, 10)
+                    if removed != "-":
+                        total_removed += int(removed, 10)
+            if total_added > 0:
+                ministat += [f"{green}+{total_added}{colorreset()}"]
+                ministat_monochrome += [f"+{total_added}"]
+            if total_removed > 0:
+                ministat += [f"{red}-{total_removed}{colorreset()}"]
+                ministat_monochrome += [f"-{total_removed}"]
+
+            if ministat:
+                ministat_monochrome = " ".join(ministat_monochrome) + " "
+                pad = ""
+                pad_size = 14
+                if len(ministat_monochrome) < pad_size:
+                    pad = " "*(pad_size - len(ministat_monochrome))
+                ministat = pad + " ".join(ministat) + " "
+            else:
+                ministat = ""
+
+            inp.append(f"{item.chain} {item.githash} {prefix} {color}ID:{item.chain.split('-')[0]}{colorreset()} "
+                       f"{item.githash[:12]} {datecolor}{date}{colorreset()} {ministat} {item.subject()}\n")
+
+
+    process = subprocess.Popen(["fzf"] + fzf_options, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    for line in inp:
+        process.stdin.write(line.encode('utf-8'))
+    process.stdin.close()
+
+    res = process.wait()
+    if res != 0:
+        sys.exit(-1)
+        return
+
+    output_lines = process.stdout.readlines()
+    for line in output_lines:
+        tokens = [x for x in line.decode('utf-8').split(' ') if x]
+        return Selection(chain_id=tokens[0], githash=tokens[1])
+
+
+def link_chain(selection: Selection, remaining):
+    """ 'link' command """
+    chain_info = get_chain_info()
+    if remaining:
+        remaining = ' - ' + ' '.join(remaining)
+    else:
+        remaining = ''
+    chain = chain_info.find_first_frag(selection.chain_id)
+    system(f'git commit -m "{chain.subject()}{remaining}\n\nGit-chain: {selection.chain_id}"')
+
+
+POSSIBLE_COLORS = [
+    "#1177ff",
+    "#7733ff",
+    "#11cc66",
+    "#ff33cc",
+    "#9999cc",
+    "#ffffbb",
+]
+
+
+def create_new(remaining):
+    """ 'new' command """
+    chain_info = get_chain_info()
+    possible_colors = set(POSSIBLE_COLORS)
+    for (_, color) in chain_info.colors.items():
+        if color in possible_colors:
+            possible_colors.remove(color)
+    if len(possible_colors) == 0:
+        raise Exception("no color")
+        return
+
+    new_color = list(possible_colors)[0]
+    subject = ' '.join(remaining)
+    if subject == '':
+        subject = "WIP"
+    import uuid
+    uid = str(uuid.uuid4())
+    system(f'git commit -m "{subject}\n\nGit-chain: {uid}\nGit-chain-color: {new_color}"')
+
+
+def rebase(base, reword_func, commands):
+    tf = tempfile.NamedTemporaryFile()
+    tf.write("\n".join(commands + []).encode('utf-8'))
+    tf.flush()
+    editor_cmd = f"{sys.argv[0]} from-rebase {tf.name} {reword_func}"
+    cmd = f"git -c core.editor='{editor_cmd}' rebase -i {base}"
+    return system(cmd)
+
+
+def squash():
+    chain_info = get_chain_info().reverse()
+    commands = []
+    for frag in chain_info.frags:
+        for (idx, item) in enumerate(frag.items):
+            if idx == 0:
+                commands.append(f"reword {item.githash}")
+            else:
+                commands.append(f"fixup {item.githash}")
+    rebase(chain_info.base, "bump_squash_count", commands)
+
+
+def kill_chain(selection):
+    """ 'kill' command - FZF-pick a chain and remove all its fragments """
+    chain_info = get_chain_info().reverse()
+    commands = []
+    for frag in chain_info.frags:
+        for item in frag.items:
+            if frag.chain() == selection.chain_id:
+                commands.append(f"drop {item.githash}")
+            else:
+                commands.append(f"pick {item.githash}")
+    rebase(chain_info.base, "bump_squash_count", commands)
+
+
+def finish_chain(selection):
+    chain_info = get_chain_info().reverse()
+    first_commands = []
+    commands = []
+    for frag in chain_info.frags:
+        for item in frag.items:
+            if frag.chain() == selection.chain_id:
+                if len(first_commands) == 0:
+                    first_commands.append(f"reword {item.githash}")
+                else:
+                    first_commands.append(f"fixup {item.githash}")
+            else:
+                commands.append(f"pick {item.githash}")
+    commands = first_commands + commands
+    rebase(chain_info.base, "remove_meta", commands)
+
+
+def bump_squash_count(filename):
+    # We are going to rewrite the file given by `filename`.
+    # It is a commit message.
+    # Search for a line matching `^Git-chain-squash-count: [0-9]+$` in the file.
+    # If exists, bump the number +1 and rewrite the file.
+    # Otherwise, insert `Git-chain-squash-count: 1` right after the line matching `^Git-chain: .*$`
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+
+    pattern = re.compile(r'^(Git-chain-squash-count: )(\d+)$')
+    new_lines = []
+    found = False
+    for line in lines:
+        m = pattern.match(line.rstrip('\n'))
+        if m:
+            count = int(m.group(2), 10) + 1
+            new_lines.append(f"{m.group(1)}{count}\n")
+            found = True
+        else:
+            new_lines.append(line)
+
+    if not found:
+        inserted = False
+        init_line = "Git-chain-squash-count: 2\n"
+        for i, line in enumerate(new_lines):
+            if re.match(r'^Git-chain: .*$',
+                        line.rstrip('\n')):
+                new_lines.insert(i + 1, init_line)
+                inserted = True
+                break
+        if not inserted:
+            new_lines.append(init_line)
+    with open(filename, 'w') as f:
+        f.writelines(new_lines)
+
+
+def remove_meta(filename):
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+
+    pattern = re.compile(r'^Git-chain.*:.*')
+    new_lines = []
+    for line in lines:
+        m = pattern.match(line.rstrip('\n'))
+        if not m:
+            new_lines.append(line)
+
+    with open(filename, 'w') as f:
+        f.writelines(new_lines)
+
+
+GIT_PUSH_HOOK = """#!/bin/bash
+
+if [[ "${ALLOW_GIT_CHAIN_PUSH:-}" == "y" ]]; then
+    exit 0
+fi
+
+# Read commit range from stdin (local and remote ref pairs)
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # Determine commits to push
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        # New branch or force push, check all history
+        commit_range="$local_sha"
+    else
+        commit_range="$remote_sha..$local_sha"
+    fi
+
+    # Check commit messages
+    problematic_commits=$(git log --pretty=format:"%h %b" "$commit_range" -E --grep='^Git-chain(-[a-z]+)?:')
+
+    if [[ -n "$problematic_commits" ]]; then
+        echo "Push rejected: found unfinished 'git chain' commits"
+        echo "Add ALLOW_GIT_CHAIN_PUSH=y to environment to bypass"
+        exit 1
+    fi
+done
+
+exit 0
+"""
+
+
+def install_prepush():
+    gitdir = None
+    with os.popen("git rev-parse --git-dir") as f:
+        gitdir = f.read().strip()
+    if not gitdir:
+        return
+    path = f"{gitdir}/hooks/pre-push"
+    print(f"git-chain: installing {path}")
+    with open(path, "w") as f:
+        f.write(GIT_PUSH_HOOK)
+    system(f"chmod a+x {path}")
+    print(f"git-chain: done")
+
+
+def main():
+    if sys.argv[1:] and sys.argv[1] == "from-rebase":
+        script = sys.argv[2]
+        reword_func = sys.argv[3]
+        output = sys.argv[4]
+        if output.endswith('git-rebase-todo'):
+            shutil.copy(script, output)
+        else:
+            if reword_func == "bump_squash_count":
+                bump_squash_count(output)
+            elif reword_func == "remove_meta":
+                remove_meta(output)
+
+        sys.exit(0)
+
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument("-a", action="store_true", help="perform git add -a after command")
+    subparsers = parser.add_subparsers(dest="top_level")
+
+    commands = ['new', 'link', 'list', 'squash', 'kill', 'finish', 'prepush']
+    for command in commands:
+        func = subparsers.add_parser(command)
+        func.add_argument('remaining', nargs=argparse.REMAINDER, help='')
+        func.set_defaults()
+
+    funcs = dict(list=list_chains, link=link_chain, new=create_new, squash=squash, kill=kill_chain,
+                 finish=finish_chain, prepush=install_prepush)
+
+    args = parser.parse_args()
+    if args.top_level:
+        func = funcs[args.top_level]
+        params = []
+        for (param_name, _) in list(inspect.signature(func).parameters.items()):
+            if param_name == 'selection':
+                params.append(pick_fzf())
+            elif param_name == 'remaining':
+                params.append(args.remaining)
+            else:
+                raise Exception(param_name)
+        if args.a:
+            system("git add -A")
+        func(*params)
+
+
+if __name__ == "__main__":
+    main()
