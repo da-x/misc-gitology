@@ -92,10 +92,6 @@ def colorreset():
 DRY_RUN = "GIT_REBASE_CMD__OPTION_DRY_RUN"
 
 
-def from_rebase(command_line, rebase_script):
-    pass
-
-
 class ChainItem(NamedTuple):
     githash: str
     message: str
@@ -325,6 +321,19 @@ def link_chain(selection: Selection, remaining):
     system(f'git commit -m "{chain.subject()}{remaining}\n\nGit-chain: {selection.chain_id}"')
 
 
+def reword(selection):
+    """ 'kill' command - FZF-pick a chain and remove all its fragments """
+    chain_info = get_chain_info().reverse()
+    commands = []
+    for frag in chain_info.frags:
+        for (item_idx, item) in enumerate(frag.items):
+            if frag.chain() == selection.chain_id and frag.index == 0 and item_idx == 0:
+                commands.append(f"reword {item.githash}")
+            else:
+                commands.append(f"pick {item.githash}")
+    rebase(chain_info.base, "reword_chain", commands)
+
+
 POSSIBLE_COLORS = [
     "#1177ff",
     "#7733ff",
@@ -359,8 +368,10 @@ def rebase(base, reword_func, commands):
     tf = tempfile.NamedTemporaryFile()
     tf.write("\n".join(commands + []).encode('utf-8'))
     tf.flush()
-    editor_cmd = f"{sys.argv[0]} from-rebase {tf.name} {reword_func}"
-    cmd = f"git -c core.editor='{editor_cmd}' rebase -i {base}"
+    editor_cmd = ""
+    if reword_func:
+        editor_cmd = f"-c core.editor='{sys.argv[0]} from-rebase {tf.name} {reword_func}'"
+    cmd = f"git {editor_cmd} rebase -i {base}"
     return system(cmd)
 
 
@@ -386,7 +397,7 @@ def kill_chain(selection):
                 commands.append(f"drop {item.githash}")
             else:
                 commands.append(f"pick {item.githash}")
-    rebase(chain_info.base, "bump_squash_count", commands)
+    rebase(chain_info.base, None, commands)
 
 
 def finish_chain(selection):
@@ -513,6 +524,8 @@ def main():
                 bump_squash_count(output)
             elif reword_func == "remove_meta":
                 remove_meta(output)
+            elif reword_func == "reword_chain":
+                sys.exit(os.system(f"$EDITOR {output}"))
 
         sys.exit(0)
 
@@ -520,14 +533,14 @@ def main():
     parser.add_argument("-a", action="store_true", help="perform git add -a after command")
     subparsers = parser.add_subparsers(dest="top_level")
 
-    commands = ['new', 'link', 'list', 'squash', 'kill', 'finish', 'prepush']
+    commands = ['new', 'link', 'list', 'squash', 'kill', 'finish', 'prepush', "reword"]
     for command in commands:
         func = subparsers.add_parser(command)
         func.add_argument('remaining', nargs=argparse.REMAINDER, help='')
         func.set_defaults()
 
     funcs = dict(list=list_chains, link=link_chain, new=create_new, squash=squash, kill=kill_chain,
-                 finish=finish_chain, prepush=install_prepush)
+                 finish=finish_chain, prepush=install_prepush, reword=reword)
 
     args = parser.parse_args()
     if args.top_level:
