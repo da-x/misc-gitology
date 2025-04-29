@@ -153,9 +153,8 @@ def main():
 
 
 def get_branches_info():
-    from dateutil import parser
     cmd = ("git for-each-ref --sort=-committerdate "
-           "refs/heads/ --format='%(committerdate) ;_;_; %(refname) ;_;_; "
+           "refs/heads/ --format='%(committerdate:unix) ;_;_; %(refname) ;_;_; "
            "%(objectname) ;_;_; %(subject)'")
     d = {}
     for line in os.popen(cmd).readlines():
@@ -163,8 +162,7 @@ def get_branches_info():
         b = b.strip()
         if b.startswith('refs/heads/'):
             b = b[len('refs/heads/'):]
-        ts_v = parser.parse(ts)
-        d[b] = dict(timestamp=int(time.mktime(ts_v.timetuple())),
+        d[b] = dict(timestamp=int(ts),
                     objname=objname, subject=subject.strip())
     return d
 
