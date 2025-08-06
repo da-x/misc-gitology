@@ -55,17 +55,22 @@ def cmd_sync(*args):
     local_refs = {}
     remote_re = re.compile(f"^([^ ]+) refs/remotes/{other}/(.*)")
     local_re = re.compile(f"([^ ]+) refs/heads/(.*)")
+    weird_names = ["HEAD"]
 
     for ref in os.popen("git show-ref", "r"):
         ref = ref.strip()
         m = remote_re.search(ref)
         if m:
             (ref, name) = m.groups(0)
+            if name in weird_names:
+                continue
             remote_refs[name] = ref
 
         m = local_re.search(ref)
         if m:
             (ref, name) = m.groups(0)
+            if name in weird_names:
+                continue
             local_refs[name] = ref
 
     branches = list(set(remote_refs.keys()).union(set(local_refs.keys())))
