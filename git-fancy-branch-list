@@ -25,7 +25,7 @@ f.close()
 cmd = (
         """git for-each-ref "$@" --sort=-committerdate refs/heads/ refs/remotes/"""
         + remote_prefix +
-        """  --format="%(committerdate) ;; %(refname) ;; %(objectname) ;; %(subject)" """
+        """  --format=";_; %(committerdate) ;; %(refname) ;; %(objectname) ;; %(subject)" """
         )
 
 branch_list = os.popen(cmd, "r").read()
@@ -75,8 +75,13 @@ lst = []
 nb = 0
 branch_type = {}
 branch_hash = {}
-for line in branch_list.splitlines():
-    (ts, b, h, s) = line.split(' ;; ')
+for line in branch_list.split(";_; "):
+    if not line:
+        continue
+    line = line.strip()
+    if line.endswith(" ;;"):
+        line += " "
+    (ts, b, h, s) = line.split(' ;; ', 4)
     place = "        "
     is_remote = False
     if b.startswith('refs/heads/'):
