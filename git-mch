@@ -49,10 +49,14 @@ save_helper() {
         local rel_file="${orig_file#$orig_dir/}"
         if [ -f "$rel_file" ]; then
             # Create diff
-            diff -u "$orig_file" "$rel_file" >> "$diff_file" || true
+            diff -u "$orig_file" "$rel_file" | removal-of-hashes-from-diff-3-hunks >> "$diff_file" || true
         fi
     done
     echo "Saved diff for $name"
+}
+
+removal-of-hashes-from-diff-3-hunks() {
+    sed -E 's#^-[|][|][|][|][|][|][|] [a-f0-9]+$#-|||||||#g'
 }
 
 apply_helper() {
@@ -67,9 +71,21 @@ apply_helper() {
         exit 1
     fi
     echo "Applying $diff_file"
-    cat "$diff_file" | patch -p1
+    cat "$diff_file" | removal-of-hashes-from-diff-3-hunks | patch -p0
     echo "Applied diff for $name"
 }
+
+list_helper() {
+    local i
+
+    for i in $HELPERS_DIR/*/diff.patch; do
+        date=$(stat "$i" | grep Modify | cut -c9-18)
+        i=${i#"$HELPERS_DIR"/}
+        i=${i%/diff.patch}
+        echo "${date}  ${i}"
+    done
+}
+
 
 main() {
     case "$1" in
@@ -81,6 +97,9 @@ main() {
             ;;
         apply)
             apply_helper "$2"
+            ;;
+        list)
+            list_helper "$2"
             ;;
         *)
             echo "Usage: $0 {start|save|apply} <name>"
