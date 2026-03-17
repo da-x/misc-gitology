@@ -1,0 +1,92 @@
+#!/bin/bash
+
+set -e
+
+GIT_COMMON_DIR=$(git rev-parse --git-common-dir)
+GIT_WORKTREE_DIR=$(git rev-parse --git-dir)
+HELPERS_DIR="$GIT_COMMON_DIR/merge-conflict-helpers"
+
+check_conflict_state() {
+    if [ ! -f "$GIT_WORKTREE_DIR/MERGE_HEAD" ] && [ ! -f "$GIT_WORKTREE_DIR/REBASE_HEAD" ]; then
+        echo "Not in a merge or rebase conflict state."
+        exit 1
+    fi
+}
+
+start_helper() {
+    local name="$1"
+    if [ -z "$name" ]; then
+        echo "Usage: $0 start <name>"
+        exit 1
+    fi
+    check_conflict_state
+    local orig_dir="$HELPERS_DIR/$name/orig"
+    # Get conflicted files
+    git status --porcelain | grep '^UU\|^AA\|^DD' | awk '{print $2}' | while read -r file; do
+        # Copy preserving directory
+        mkdir -p "$orig_dir/$(dirname "$file")"
+        cp "$file" "$orig_dir/$file"
+    done
+    echo "Started conflict helper for $name"
+}
+
+save_helper() {
+    local name="$1"
+    if [ -z "$name" ]; then
+        echo "Usage: $0 save <name>"
+        exit 1
+    fi
+    local orig_dir="$HELPERS_DIR/$name/orig"
+    mkdir -p "$orig_dir"
+    local diff_file="$HELPERS_DIR/$name/diff.patch"
+    if [ ! -d "$orig_dir" ]; then
+        echo "No orig directory for $name"
+        exit 1
+    fi
+    # Clear diff file
+    > "$diff_file"
+    find "$orig_dir" -type f | while read -r orig_file; do
+        local rel_file="${orig_file#$orig_dir/}"
+        if [ -f "$rel_file" ]; then
+            # Create diff
+            diff -u "$orig_file" "$rel_file" >> "$diff_file" || true
+        fi
+    done
+    echo "Saved diff for $name"
+}
+
+apply_helper() {
+    local name="$1"
+    if [ -z "$name" ]; then
+        echo "Usage: $0 apply <name>"
+        exit 1
+    fi
+    local diff_file="$HELPERS_DIR/$name/diff.patch"
+    if [ ! -f "$diff_file" ]; then
+        echo "No diff file for $name"
+        exit 1
+    fi
+    echo "Applying $diff_file"
+    cat "$diff_file" | patch -p1
+    echo "Applied diff for $name"
+}
+
+main() {
+    case "$1" in
+        start)
+            start_helper "$2"
+            ;;
+        save)
+            save_helper "$2"
+            ;;
+        apply)
+            apply_helper "$2"
+            ;;
+        *)
+            echo "Usage: $0 {start|save|apply} <name>"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
