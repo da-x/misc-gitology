@@ -48,7 +48,7 @@ def main():
     # Take in branches according to the timestamp of their mention
     # in the reflog.
     for head_path in head_paths:
-        head = open(head_path).readlines()
+        head = open(head_path, encoding='utf-8', errors='ignore').readlines()
         head.reverse()
         for i in head:
             r = m.search(i)
