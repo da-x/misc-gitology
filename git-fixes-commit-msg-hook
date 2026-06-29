@@ -37,7 +37,7 @@ def main():
 
     lines = []
     modified = False
-    for line in open(commit_msg_file, "r").readlines():
+    for line in open(commit_msg_file, "r", errors="surrogateescape").readlines():
         m = RE.match(line)
         if m:
             line = line.strip()
@@ -60,7 +60,7 @@ def main():
 
     print()
 
-    f = open(commit_msg_file_tmp, "w")
+    f = open(commit_msg_file_tmp, "w", errors="surrogateescape")
     f.write("".join(lines))
     f.close()
 
